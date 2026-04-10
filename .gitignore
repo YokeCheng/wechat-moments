@@ -1,11 +1,15 @@
 .env
 backend/.env
 frontend/.env
+.runtime/
 *.sqlite3
+*.sqlite
+*.db
 .idea/
 .pytest_cache/
 backend/.pytest_cache/
 pytest-cache-files-*/
+backend/pytest-cache-files-*/
 frontend/out/
 __pycache__/
 *.pyc
