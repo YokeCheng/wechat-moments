@@ -1,0 +1,15 @@
+.env
+backend/.env
+frontend/.env
+*.sqlite3
+.idea/
+.pytest_cache/
+backend/.pytest_cache/
+pytest-cache-files-*/
+frontend/out/
+__pycache__/
+*.pyc
+*.log
+*.err.log
+frontend/node_modules/
+frontend/dist/

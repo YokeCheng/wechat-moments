@@ -1,0 +1,1232 @@
+openapi: 3.0.3
+info:
+  title: 爆了么 Backend API Draft
+  version: 0.1.0
+  description: |
+    基于当前 frontend 代码整理的后端接口草稿。
+    目标是覆盖前端已实现页面、交互动作和 mock 数据结构。
+servers:
+  - url: http://127.0.0.1:8000
+tags:
+  - name: system
+  - name: auth
+  - name: discover
+  - name: prompt-categories
+  - name: prompts
+  - name: writer-groups
+  - name: writer-articles
+  - name: generate-tasks
+  - name: layout
+  - name: assets
+  - name: channels
+  - name: billing
+  - name: contact
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      tags: [system]
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+  /api/v1/auth/dev-login:
+    post:
+      tags: [auth]
+      summary: Development login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DevLoginRequest'
+      responses:
+        '200':
+          description: Development token issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DevLoginResponse'
+        '400':
+          description: Invalid username
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+
+  /api/v1/me:
+    get:
+      tags: [auth]
+      summary: Get current user profile
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUser'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+
+  /api/v1/discover/articles:
+    get:
+      tags: [discover]
+      summary: Query discover article list
+      parameters:
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/Keyword'
+        - name: field
+          in: query
+          schema:
+            type: string
+        - name: time_range
+          in: query
+          schema:
+            type: string
+            enum: [all, 1d, 3d, 7d, 1m, 3m]
+        - name: views_min
+          in: query
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Article list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoverArticleList'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+
+  /api/v1/discover/hot-topics:
+    get:
+      tags: [discover]
+      summary: Query hot topic list
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Hot topic list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HotTopicList'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+
+  /api/v1/discover/articles/{articleId}/favorite:
+    post:
+      tags: [discover]
+      summary: Favorite discover article
+      parameters:
+        - $ref: '#/components/parameters/ArticleId'
+      responses:
+        '200':
+          description: Favorite created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleMessage'
+    delete:
+      tags: [discover]
+      summary: Remove discover article favorite
+      parameters:
+        - $ref: '#/components/parameters/ArticleId'
+      responses:
+        '200':
+          description: Favorite removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleMessage'
+
+  /api/v1/discover/articles/{articleId}/derive-prompt:
+    post:
+      tags: [discover]
+      summary: Generate prompt draft from discover article
+      parameters:
+        - $ref: '#/components/parameters/ArticleId'
+      responses:
+        '200':
+          description: Derived prompt draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prompt'
+
+  /api/v1/prompt-categories:
+    get:
+      tags: [prompt-categories]
+      summary: List prompt categories
+      responses:
+        '200':
+          description: Prompt category list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptCategoryList'
+    post:
+      tags: [prompt-categories]
+      summary: Create prompt category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromptCategoryCreateRequest'
+      responses:
+        '201':
+          description: Prompt category created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptCategory'
+
+  /api/v1/prompt-categories/{categoryId}:
+    patch:
+      tags: [prompt-categories]
+      summary: Update prompt category
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromptCategoryUpdateRequest'
+      responses:
+        '200':
+          description: Prompt category updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptCategory'
+    delete:
+      tags: [prompt-categories]
+      summary: Delete prompt category
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      responses:
+        '200':
+          description: Prompt category deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleMessage'
+
+  /api/v1/prompts:
+    get:
+      tags: [prompts]
+      summary: List prompts
+      parameters:
+        - $ref: '#/components/parameters/Keyword'
+        - name: category_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/PromptStatus'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Prompt list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptList'
+    post:
+      tags: [prompts]
+      summary: Create prompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromptCreateRequest'
+      responses:
+        '201':
+          description: Prompt created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prompt'
+
+  /api/v1/prompts/{promptId}:
+    get:
+      tags: [prompts]
+      summary: Get prompt detail
+      parameters:
+        - $ref: '#/components/parameters/PromptId'
+      responses:
+        '200':
+          description: Prompt detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prompt'
+    patch:
+      tags: [prompts]
+      summary: Update prompt
+      parameters:
+        - $ref: '#/components/parameters/PromptId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromptUpdateRequest'
+      responses:
+        '200':
+          description: Prompt updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prompt'
+    delete:
+      tags: [prompts]
+      summary: Delete prompt
+      parameters:
+        - $ref: '#/components/parameters/PromptId'
+      responses:
+        '200':
+          description: Prompt deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleMessage'
+
+  /api/v1/writer/groups:
+    get:
+      tags: [writer-groups]
+      summary: List writer groups
+      responses:
+        '200':
+          description: Group list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriterGroupList'
+    post:
+      tags: [writer-groups]
+      summary: Create writer group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WriterGroupCreateRequest'
+      responses:
+        '201':
+          description: Group created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriterGroup'
+
+  /api/v1/writer/groups/{groupId}:
+    delete:
+      tags: [writer-groups]
+      summary: Delete writer group
+      parameters:
+        - $ref: '#/components/parameters/GroupId'
+      responses:
+        '200':
+          description: Group deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleMessage'
+
+  /api/v1/writer/articles:
+    get:
+      tags: [writer-articles]
+      summary: List writer articles
+      parameters:
+        - name: group_id
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Keyword'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/WriterArticleStatus'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Article list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriterArticleList'
+    post:
+      tags: [writer-articles]
+      summary: Create writer article draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WriterArticleCreateRequest'
+      responses:
+        '201':
+          description: Writer article created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriterArticle'
+
+  /api/v1/writer/articles/{articleId}:
+    get:
+      tags: [writer-articles]
+      summary: Get writer article detail
+      parameters:
+        - $ref: '#/components/parameters/WriterArticleId'
+      responses:
+        '200':
+          description: Writer article detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriterArticle'
+    patch:
+      tags: [writer-articles]
+      summary: Update writer article
+      parameters:
+        - $ref: '#/components/parameters/WriterArticleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WriterArticleUpdateRequest'
+      responses:
+        '200':
+          description: Writer article updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriterArticle'
+    delete:
+      tags: [writer-articles]
+      summary: Delete writer article
+      parameters:
+        - $ref: '#/components/parameters/WriterArticleId'
+      responses:
+        '200':
+          description: Writer article deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleMessage'
+
+  /api/v1/writer/generate-tasks:
+    post:
+      tags: [generate-tasks]
+      summary: Create AI generate task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateTaskCreateRequest'
+      responses:
+        '202':
+          description: Generate task accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateTask'
+
+  /api/v1/writer/generate-tasks/{taskId}:
+    get:
+      tags: [generate-tasks]
+      summary: Get generate task status
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Generate task detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateTask'
+
+  /api/v1/layout/render:
+    post:
+      tags: [layout]
+      summary: Render markdown and style settings to HTML
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LayoutRenderRequest'
+      responses:
+        '200':
+          description: Rendered HTML
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LayoutRenderResponse'
+
+  /api/v1/layout/drafts:
+    get:
+      tags: [layout]
+      summary: List layout drafts
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Layout draft list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LayoutDraftList'
+    post:
+      tags: [layout]
+      summary: Create layout draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LayoutDraftUpsertRequest'
+      responses:
+        '201':
+          description: Layout draft created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LayoutDraft'
+
+  /api/v1/layout/drafts/{draftId}:
+    get:
+      tags: [layout]
+      summary: Get layout draft detail
+      parameters:
+        - $ref: '#/components/parameters/DraftId'
+      responses:
+        '200':
+          description: Layout draft detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LayoutDraft'
+    patch:
+      tags: [layout]
+      summary: Update layout draft
+      parameters:
+        - $ref: '#/components/parameters/DraftId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LayoutDraftUpsertRequest'
+      responses:
+        '200':
+          description: Layout draft updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LayoutDraft'
+    delete:
+      tags: [layout]
+      summary: Delete layout draft
+      parameters:
+        - $ref: '#/components/parameters/DraftId'
+      responses:
+        '200':
+          description: Layout draft deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleMessage'
+
+  /api/v1/assets:
+    post:
+      tags: [assets]
+      summary: Upload cover or article asset
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                asset_type:
+                  type: string
+                  enum: [cover_image, content_image]
+      responses:
+        '201':
+          description: Asset uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+
+  /api/v1/channels:
+    get:
+      tags: [channels]
+      summary: List authorized channels
+      responses:
+        '200':
+          description: Channel list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelList'
+
+  /api/v1/channels/authorize:
+    post:
+      tags: [channels]
+      summary: Start channel authorization flow
+      responses:
+        '200':
+          description: Authorization bootstrap
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelAuthorization'
+
+  /api/v1/channels/{channelId}:
+    delete:
+      tags: [channels]
+      summary: Unbind channel
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+      responses:
+        '200':
+          description: Channel removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleMessage'
+
+  /api/v1/channels/{channelId}/publish:
+    post:
+      tags: [channels]
+      summary: Publish article or layout draft to channel
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishCreateRequest'
+      responses:
+        '202':
+          description: Publish accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishRecord'
+
+  /api/v1/channels/{channelId}/publish-records:
+    get:
+      tags: [channels]
+      summary: List publish records for a channel
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Publish records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishRecordList'
+
+  /api/v1/billing/plans:
+    get:
+      tags: [billing]
+      summary: List billing plans
+      security: []
+      responses:
+        '200':
+          description: Billing plan list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingPlanList'
+
+  /api/v1/billing/subscription:
+    get:
+      tags: [billing]
+      summary: Get current subscription
+      responses:
+        '200':
+          description: Current subscription
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionSummary'
+
+  /api/v1/billing/orders:
+    post:
+      tags: [billing]
+      summary: Create billing order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCreateRequest'
+      responses:
+        '201':
+          description: Order created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+
+  /api/v1/billing/orders/{orderId}:
+    get:
+      tags: [billing]
+      summary: Get order detail
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: Order detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+
+  /api/v1/billing/usage:
+    get:
+      tags: [billing]
+      summary: Get current usage counters
+      responses:
+        '200':
+          description: Usage summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageSummary'
+
+  /api/v1/contact/messages:
+    post:
+      tags: [contact]
+      summary: Submit contact form
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContactMessageCreateRequest'
+      responses:
+        '201':
+          description: Contact message created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactMessage'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Keyword:
+      name: keyword
+      in: query
+      schema: { type: string }
+    Platform:
+      name: platform
+      in: query
+      schema: { type: string, enum: [weixin, toutiao] }
+    ArticleId:
+      name: articleId
+      in: path
+      required: true
+      schema: { type: string }
+    CategoryId:
+      name: categoryId
+      in: path
+      required: true
+      schema: { type: string }
+    PromptId:
+      name: promptId
+      in: path
+      required: true
+      schema: { type: string }
+    GroupId:
+      name: groupId
+      in: path
+      required: true
+      schema: { type: string }
+    WriterArticleId:
+      name: articleId
+      in: path
+      required: true
+      schema: { type: string }
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema: { type: string }
+    DraftId:
+      name: draftId
+      in: path
+      required: true
+      schema: { type: string }
+    ChannelId:
+      name: channelId
+      in: path
+      required: true
+      schema: { type: string }
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string }
+
+  schemas:
+    Health:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+    SimpleMessage:
+      type: object
+      properties:
+        message: { type: string, example: ok }
+    ErrorMessage:
+      type: object
+      properties:
+        detail: { type: string, example: unauthorized }
+    Pagination:
+      type: object
+      properties:
+        page: { type: integer }
+        page_size: { type: integer }
+        total: { type: integer }
+        has_more: { type: boolean }
+    PromptStatus:
+      type: string
+      enum: [draft, active, generating]
+    WriterArticleStatus:
+      type: string
+      enum: [draft, generating, completed, failed]
+    GenerateTaskStatus:
+      type: string
+      enum: [queued, running, succeeded, failed, cancelled]
+    PublishStatus:
+      type: string
+      enum: [queued, publishing, success, failed]
+    DevLoginRequest:
+      type: object
+      required: [username]
+      properties:
+        username:
+          type: string
+          minLength: 1
+    DevLoginUser:
+      type: object
+      properties:
+        id: { type: string }
+        username: { type: string }
+        display_name: { type: string }
+        plan_code: { type: string, enum: [free, basic, pro, enterprise] }
+    DevLoginResponse:
+      type: object
+      properties:
+        token: { type: string }
+        user:
+          $ref: '#/components/schemas/DevLoginUser'
+    CurrentUser:
+      type: object
+      properties:
+        id: { type: string }
+        username: { type: string }
+        display_name: { type: string }
+        plan_code: { type: string, enum: [free, basic, pro, enterprise] }
+        usage: { $ref: '#/components/schemas/UsageSummary' }
+    UsageSummary:
+      type: object
+      properties:
+        generate_daily_used: { type: integer }
+        generate_daily_limit: { type: integer }
+        prompt_count: { type: integer }
+        channel_count: { type: integer }
+        export_monthly_used: { type: integer }
+        export_monthly_limit: { type: integer }
+    DiscoverArticle:
+      type: object
+      properties:
+        id: { type: string }
+        platform: { type: string, enum: [weixin, toutiao] }
+        field: { type: string }
+        title: { type: string }
+        author: { type: string }
+        publish_time: { type: string, format: date-time }
+        views: { type: integer }
+        likes: { type: integer }
+        shares: { type: integer }
+        source_url: { type: string }
+        is_hot: { type: boolean }
+        is_new: { type: boolean }
+    HotTopic:
+      type: object
+      properties:
+        id: { type: string }
+        rank: { type: integer }
+        title: { type: string }
+        heat: { type: integer }
+        trend: { type: string, enum: [up, down, stable] }
+        field: { type: string }
+    PromptCategory:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        count: { type: integer }
+    Prompt:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        category_id: { type: string, nullable: true }
+        category_name: { type: string, nullable: true }
+        content: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        usage_count: { type: integer }
+        status: { $ref: '#/components/schemas/PromptStatus' }
+    WriterGroup:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        article_count: { type: integer }
+    WriterArticle:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        group_id: { type: string, nullable: true }
+        group_name: { type: string, nullable: true }
+        prompt_id: { type: string, nullable: true }
+        prompt_title: { type: string, nullable: true }
+        ref_url: { type: string, nullable: true }
+        image_count: { type: integer }
+        word_count: { type: integer }
+        status: { $ref: '#/components/schemas/WriterArticleStatus' }
+        content_md: { type: string }
+    GenerateTask:
+      type: object
+      properties:
+        id: { type: string }
+        article_id: { type: string }
+        status: { $ref: '#/components/schemas/GenerateTaskStatus' }
+        error_message: { type: string, nullable: true }
+    LayoutDraft:
+      type: object
+      properties:
+        id: { type: string }
+        article_id: { type: string, nullable: true }
+        title: { type: string }
+        cover_asset_id: { type: string, nullable: true }
+        content_md: { type: string }
+        content_html: { type: string }
+        theme_id: { type: string }
+        theme_color: { type: string }
+        font_family: { type: string, enum: [sans, serif, round] }
+        font_size: { type: integer }
+        line_height: { type: number }
+        title_align: { type: string, enum: [left, center] }
+        para_indent: { type: boolean }
+        round_image: { type: boolean }
+    LayoutRenderResponse:
+      type: object
+      properties:
+        html: { type: string }
+    Asset:
+      type: object
+      properties:
+        id: { type: string }
+        asset_type: { type: string }
+        file_name: { type: string }
+        mime_type: { type: string }
+        size: { type: integer }
+        public_url: { type: string }
+    Channel:
+      type: object
+      properties:
+        id: { type: string }
+        channel_name: { type: string }
+        avatar_url: { type: string, nullable: true }
+        followers_count: { type: integer }
+        articles_count: { type: integer }
+        status: { type: string, enum: [authorized, expired, revoked] }
+    ChannelAuthorization:
+      type: object
+      properties:
+        auth_url: { type: string }
+        state: { type: string }
+    PublishRecord:
+      type: object
+      properties:
+        id: { type: string }
+        channel_id: { type: string }
+        article_id: { type: string, nullable: true }
+        layout_draft_id: { type: string, nullable: true }
+        title: { type: string }
+        status: { $ref: '#/components/schemas/PublishStatus' }
+        remote_article_id: { type: string, nullable: true }
+        error_message: { type: string, nullable: true }
+    BillingPlan:
+      type: object
+      properties:
+        code: { type: string, enum: [free, basic, pro, enterprise] }
+        name: { type: string }
+        price: { type: integer }
+        period: { type: string, enum: [month, year] }
+        features:
+          type: array
+          items: { type: string }
+    SubscriptionSummary:
+      type: object
+      properties:
+        plan_code: { type: string }
+        plan_name: { type: string }
+        status: { type: string }
+        usage: { $ref: '#/components/schemas/UsageSummary' }
+    Order:
+      type: object
+      properties:
+        id: { type: string }
+        order_no: { type: string }
+        plan_code: { type: string }
+        amount: { type: integer }
+        payment_method: { type: string, enum: [wechat, alipay] }
+        status: { type: string, enum: [pending, paid, failed, closed] }
+        qr_code_url: { type: string, nullable: true }
+    ContactMessage:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string, format: email }
+        type: { type: string, enum: [feature, bug, business, account, other] }
+        message: { type: string }
+        status: { type: string, enum: [new, processing, replied, closed] }
+    DiscoverArticleList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/DiscoverArticle' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+    HotTopicList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/HotTopic' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+    PromptCategoryList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PromptCategory' }
+    PromptList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Prompt' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+    WriterGroupList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/WriterGroup' }
+    WriterArticleList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/WriterArticle' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+    LayoutDraftList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/LayoutDraft' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+    ChannelList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Channel' }
+    PublishRecordList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PublishRecord' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+    BillingPlanList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/BillingPlan' }
+    PromptCategoryCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+    PromptCategoryUpdateRequest:
+      type: object
+      properties:
+        name: { type: string }
+    PromptCreateRequest:
+      type: object
+      required: [title, content]
+      properties:
+        title: { type: string }
+        category_id: { type: string, nullable: true }
+        content: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        status: { $ref: '#/components/schemas/PromptStatus' }
+    PromptUpdateRequest:
+      type: object
+      properties:
+        title: { type: string }
+        category_id: { type: string, nullable: true }
+        content: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        status: { $ref: '#/components/schemas/PromptStatus' }
+    WriterGroupCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+    WriterArticleCreateRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        group_id: { type: string, nullable: true }
+        prompt_id: { type: string, nullable: true }
+        ref_url: { type: string, nullable: true }
+        image_count: { type: integer, default: 0 }
+        content_md: { type: string, default: '' }
+    WriterArticleUpdateRequest:
+      type: object
+      properties:
+        title: { type: string }
+        group_id: { type: string, nullable: true }
+        prompt_id: { type: string, nullable: true }
+        ref_url: { type: string, nullable: true }
+        image_count: { type: integer }
+        status: { $ref: '#/components/schemas/WriterArticleStatus' }
+        content_md: { type: string }
+    GenerateTaskCreateRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        group_id: { type: string, nullable: true }
+        prompt_id: { type: string, nullable: true }
+        ref_url: { type: string, nullable: true }
+        image_count: { type: integer, default: 3 }
+    LayoutRenderRequest:
+      type: object
+      required: [content_md]
+      properties:
+        title: { type: string }
+        article_id: { type: string, nullable: true }
+        cover_asset_id: { type: string, nullable: true }
+        content_md: { type: string }
+        theme_id: { type: string, default: default }
+        theme_color: { type: string, example: '#FF6600' }
+        font_family: { type: string, enum: [sans, serif, round] }
+        font_size: { type: integer }
+        line_height: { type: number }
+        title_align: { type: string, enum: [left, center] }
+        para_indent: { type: boolean }
+        round_image: { type: boolean }
+    LayoutDraftUpsertRequest:
+      allOf:
+        - $ref: '#/components/schemas/LayoutRenderRequest'
+    PublishCreateRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        article_id: { type: string, nullable: true }
+        layout_draft_id: { type: string, nullable: true }
+    OrderCreateRequest:
+      type: object
+      required: [plan_code, payment_method]
+      properties:
+        plan_code: { type: string, enum: [basic, pro, enterprise] }
+        payment_method: { type: string, enum: [wechat, alipay] }
+    ContactMessageCreateRequest:
+      type: object
+      required: [name, email, message]
+      properties:
+        name: { type: string }
+        email: { type: string, format: email }
+        type: { type: string, enum: [feature, bug, business, account, other], default: feature }
+        message: { type: string, maxLength: 500 }

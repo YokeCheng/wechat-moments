@@ -1,0 +1,24 @@
+name: drift-integrity
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  drift-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install harness tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tools/harness/requirements.txt
+      - name: Check slice-to-spec coverage
+        run: python tools/harness/check_slice_endpoint_coverage.py
+      - name: Check reachable dead routes
+        run: python tools/harness/check_dead_routes.py
+      - name: Check mock critical path drift
+        run: python tools/harness/check_mock_critical_path.py

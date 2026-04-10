@@ -1,0 +1,26 @@
+name: doc-integrity
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  doc-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install harness tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tools/harness/requirements.txt
+      - name: Check required Harness docs
+        run: python tools/harness/check_required_docs.py
+      - name: Parse OpenAPI spec
+        run: python tools/harness/parse_openapi.py backend/docs/backend_spec.yaml
+      - name: Check doc entry-point anchors
+        run: python tools/harness/check_doc_anchors.py
