@@ -59,7 +59,7 @@ if (-not $BackendProcess) {
     $BackendLog = Join-Path $LogDir "backend-live.log"
     $BackendErr = Join-Path $LogDir "backend-live.err.log"
     $BackendProcess = Start-Process -FilePath "python" `
-        -ArgumentList "-m", "uvicorn", "app.main:app", "--host", $BackendHost, "--port", "$BackendPort" `
+        -ArgumentList "-m", "uvicorn", "app.main:app", "--reload", "--host", $BackendHost, "--port", "$BackendPort" `
         -WorkingDirectory (Join-Path $RepoRoot "backend") `
         -RedirectStandardOutput $BackendLog `
         -RedirectStandardError $BackendErr `
