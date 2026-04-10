@@ -23,15 +23,18 @@ def main() -> int:
     settings = get_settings()
     failures: list[str] = []
 
-    try:
-        postgres_url = normalize_psycopg_url(settings.database_url)
-        with psycopg.connect(postgres_url, connect_timeout=5) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute("select 1")
-                cursor.fetchone()
-        print(f"postgres: ok ({settings.database_url})")
-    except Exception as exc:  # noqa: BLE001
-        failures.append(f"postgres: {exc}")
+    if settings.database_url.startswith("sqlite"):
+        failures.append("postgres: sqlite runtime is forbidden by harness outside APP_ENV=test")
+    else:
+        try:
+            postgres_url = normalize_psycopg_url(settings.database_url)
+            with psycopg.connect(postgres_url, connect_timeout=5) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("select 1")
+                    cursor.fetchone()
+            print(f"postgres: ok ({settings.database_url})")
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"postgres: {exc}")
 
     try:
         redis = urlparse(settings.redis_url)

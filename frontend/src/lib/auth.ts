@@ -39,6 +39,9 @@ export class ApiError extends Error {
 }
 
 export function getApiBaseUrl() {
+  if (import.meta.env.DEV) {
+    return window.location.origin.replace(/\/$/, "");
+  }
   const raw = import.meta.env.VITE_API_BASE_URL;
   if (raw && raw.trim()) {
     return raw.replace(/\/$/, "");

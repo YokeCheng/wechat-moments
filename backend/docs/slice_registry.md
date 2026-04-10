@@ -37,6 +37,12 @@
   - `.github/workflows` 提供最小 doc integrity 与 drift integrity workflow
   - `traceability_matrix.md` 已登记该治理切片
 
+Additional governance assets delivered for `G0-01`:
+
+- root `PROJECT_CONSENSUS.md`
+- `tools/dev/start_live_preview.ps1`
+- `tools/dev/stop_live_preview.ps1`
+
 ### G0-02 LAN Infra Foundation
 
 - status: `done`

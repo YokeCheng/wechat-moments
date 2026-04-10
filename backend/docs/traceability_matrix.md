@@ -27,7 +27,7 @@
 
 | Slice | Route | Core endpoints | Core entities | Required tests | Current gate target | Critical mock / drift | Current status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `G0-01 Harness Execution Foundation` | none | none | none | script self-check + workflow run | `G0 complete` | Phase A + targeted drift checks are now wired, deeper architecture/test gates still pending | done |
+| `G0-01 Harness Execution Foundation` | none | none | none | script self-check + workflow run + local live preview bootstrap | `G0 complete` | Phase A checks, root consensus entry, and reusable local live preview scripts are now wired | done |
 | `G0-02 LAN Infra Foundation` | none | none | none | compose validation + infra startup checklist | `G0 complete` | app containers are still pending, but P0 infra prerequisites are now explicit | done |
 
 ## 4. P0 Summary Matrix

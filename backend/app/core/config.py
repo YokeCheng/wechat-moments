@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     app_name: str = "wechat-moments backend"
     app_env: str = "local"
-    database_url: str = "sqlite:///./wechat_moments.db"
+    database_url: str = "postgresql+psycopg://app:app@127.0.0.1:5432/wechat_moments"
     redis_url: str = "redis://127.0.0.1:6379/0"
     jwt_secret_key: str = "replace-me"
     jwt_algorithm: str = "HS256"
@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
+
+    @model_validator(mode="after")
+    def validate_runtime_database(self) -> "Settings":
+        if self.database_url.startswith("sqlite") and self.app_env != "test":
+            raise ValueError(
+                "SQLite is only allowed for APP_ENV=test; runtime environments must use PostgreSQL."
+            )
+        return self
 
 
 @lru_cache

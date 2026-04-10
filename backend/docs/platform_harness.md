@@ -192,6 +192,11 @@ Harness 分 6 层，从上到下逐级收紧。
 - 列表查询实体必须提前定义分页和排序策略
 - 删除行为必须明确是软删、硬删还是转移归属
 
+Runtime database rule:
+
+- Runtime databases for `local`, `lan`, `staging`, and `prod` must use PostgreSQL.
+- SQLite is test-only and must not be used as the runtime database for app execution.
+
 ## 4.5 Test Harness
 
 定义开发完成时必须有哪些测试。

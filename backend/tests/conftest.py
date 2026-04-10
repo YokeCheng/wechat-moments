@@ -15,5 +15,6 @@ if str(BACKEND_DIR) not in sys.path:
 
 RUNTIME_TEST_DIR.mkdir(parents=True, exist_ok=True)
 
+os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{TEST_DB_PATH.as_posix()}")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-with-sufficient-length")
