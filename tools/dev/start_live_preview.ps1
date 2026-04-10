@@ -3,7 +3,8 @@ param(
     [int]$FrontendPort = 3000,
     [string]$BackendHost = "127.0.0.1",
     [int]$BackendPort = 8000,
-    [switch]$Restart
+    [switch]$Restart,
+    [switch]$OpenBrowser
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,6 +16,9 @@ $PidDir = Join-Path $RuntimeDir "pids"
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 New-Item -ItemType Directory -Force -Path $PidDir | Out-Null
+
+$PythonExe = (Get-Command python -ErrorAction Stop).Source
+$NpmExe = (Get-Command npm.cmd -ErrorAction Stop).Source
 
 function Get-ManagedProcess {
     param([string]$Name)
@@ -58,7 +62,7 @@ $BackendProcess = Get-ManagedProcess -Name "backend-live"
 if (-not $BackendProcess) {
     $BackendLog = Join-Path $LogDir "backend-live.log"
     $BackendErr = Join-Path $LogDir "backend-live.err.log"
-    $BackendProcess = Start-Process -FilePath "python" `
+    $BackendProcess = Start-Process -FilePath $PythonExe `
         -ArgumentList "-m", "uvicorn", "app.main:app", "--reload", "--host", $BackendHost, "--port", "$BackendPort" `
         -WorkingDirectory (Join-Path $RepoRoot "backend") `
         -RedirectStandardOutput $BackendLog `
@@ -71,12 +75,8 @@ $FrontendProcess = Get-ManagedProcess -Name "frontend-live"
 if (-not $FrontendProcess) {
     $FrontendLog = Join-Path $LogDir "frontend-live.log"
     $FrontendErr = Join-Path $LogDir "frontend-live.err.log"
-    $Command = @"
-Set-Location '$($RepoRoot.Replace("'", "''"))\\frontend'
-npm run dev -- --host $FrontendHost --port $FrontendPort
-"@
-    $FrontendProcess = Start-Process -FilePath "powershell.exe" `
-        -ArgumentList "-NoLogo", "-NoProfile", "-Command", $Command `
+    $FrontendProcess = Start-Process -FilePath $NpmExe `
+        -ArgumentList "run", "dev", "--", "--host", $FrontendHost, "--port", "$FrontendPort" `
         -WorkingDirectory (Join-Path $RepoRoot "frontend") `
         -RedirectStandardOutput $FrontendLog `
         -RedirectStandardError $FrontendErr `
@@ -84,6 +84,57 @@ npm run dev -- --host $FrontendHost --port $FrontendPort
     Set-Content -LiteralPath (Join-Path $PidDir "frontend-live.pid") -Value $FrontendProcess.Id
 }
 
-Write-Output "Frontend live preview: http://$FrontendHost`:$FrontendPort"
-Write-Output "Backend health: http://$BackendHost`:$BackendPort/health"
+$FrontendUrl = "http://$FrontendHost`:$FrontendPort"
+$BackendHealthUrl = "http://$BackendHost`:$BackendPort/health"
+
+function Wait-HttpReady {
+    param(
+        [string]$Url,
+        [string]$Name
+    )
+
+    for ($i = 0; $i -lt 40; $i++) {
+        Start-Sleep -Milliseconds 500
+        try {
+            $Response = Invoke-WebRequest $Url -UseBasicParsing -TimeoutSec 2
+            if ($Response.StatusCode -ge 200 -and $Response.StatusCode -lt 500) {
+                return
+            }
+        } catch {
+        }
+    }
+
+    Write-Output "$Name not ready: $Url"
+    if ($Name -eq "frontend") {
+        if (Test-Path -LiteralPath $FrontendLog) {
+            Write-Output "--- frontend-live.log ---"
+            Get-Content -LiteralPath $FrontendLog -Tail 80
+        }
+        if (Test-Path -LiteralPath $FrontendErr) {
+            Write-Output "--- frontend-live.err.log ---"
+            Get-Content -LiteralPath $FrontendErr -Tail 80
+        }
+    } else {
+        if (Test-Path -LiteralPath $BackendLog) {
+            Write-Output "--- backend-live.log ---"
+            Get-Content -LiteralPath $BackendLog -Tail 80
+        }
+        if (Test-Path -LiteralPath $BackendErr) {
+            Write-Output "--- backend-live.err.log ---"
+            Get-Content -LiteralPath $BackendErr -Tail 80
+        }
+    }
+
+    throw "$Name failed to start"
+}
+
+Wait-HttpReady -Url $BackendHealthUrl -Name "backend"
+Wait-HttpReady -Url $FrontendUrl -Name "frontend"
+
+Write-Output "Frontend live preview: $FrontendUrl"
+Write-Output "Backend health: $BackendHealthUrl"
 Write-Output "Logs: $LogDir"
+
+if ($OpenBrowser) {
+    Start-Process $FrontendUrl
+}
