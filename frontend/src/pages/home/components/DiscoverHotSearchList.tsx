@@ -1,7 +1,9 @@
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
 import type { HotTopic, Pagination } from "@/lib/discover";
+import { formatCompactNumber, getLocale, translateFieldLabel } from "../constants";
 
 type DiscoverHotSearchListProps = {
   items: HotTopic[];
@@ -12,21 +14,7 @@ type DiscoverHotSearchListProps = {
   onPageChange: (page: number) => void;
 };
 
-const rankColors = [
-  "text-red-500 font-black",
-  "text-orange-500 font-black",
-  "text-yellow-500 font-black",
-];
-
-function formatHeat(value: number) {
-  if (value >= 100000000) {
-    return `${(value / 100000000).toFixed(1)}亿`;
-  }
-  if (value >= 10000) {
-    return `${(value / 10000).toFixed(1)}万`;
-  }
-  return value.toLocaleString("zh-CN");
-}
+const rankColors = ["text-red-500 font-black", "text-orange-500 font-black", "text-yellow-500 font-black"];
 
 function buildPagination(currentPage: number, totalPages: number) {
   const pages = new Set<number>();
@@ -50,6 +38,9 @@ const DiscoverHotSearchList = ({
   onPageChange,
 }: DiscoverHotSearchListProps) => {
   const navigate = useNavigate();
+  const { t, i18n } = useTranslation();
+  const language = i18n.resolvedLanguage || i18n.language;
+  const locale = getLocale(language);
 
   const totalPages = useMemo(() => {
     if (!pagination || pagination.page_size === 0) {
@@ -66,15 +57,15 @@ const DiscoverHotSearchList = ({
     <div className="flex h-full flex-col overflow-hidden rounded-xl border border-gray-100 bg-white">
       <div className="flex items-center gap-2 border-b border-gray-100 px-5 py-3">
         <i className="ri-fire-line text-sm text-orange-500" />
-        <span className="text-sm font-semibold text-gray-800">热搜榜</span>
-        <span className="text-xs text-gray-400">来自后端的最新快照</span>
+        <span className="text-sm font-semibold text-gray-800">{t("home.hot.header.title")}</span>
+        <span className="text-xs text-gray-400">{t("home.hot.header.subtitle")}</span>
       </div>
 
       {isLoading && (
         <div className="flex flex-1 items-center justify-center">
           <div className="flex items-center gap-2 rounded-full bg-orange-50 px-4 py-2 text-sm text-orange-500">
             <i className="ri-loader-4-line animate-spin" />
-            正在加载热搜
+            {t("home.hot.loading")}
           </div>
         </div>
       )}
@@ -82,13 +73,13 @@ const DiscoverHotSearchList = ({
       {!isLoading && error && (
         <div className="flex flex-1 items-center justify-center px-6">
           <div className="w-full max-w-md rounded-2xl border border-red-100 bg-red-50 p-6 text-center">
-            <p className="text-sm font-semibold text-red-600">热搜请求失败</p>
+            <p className="text-sm font-semibold text-red-600">{t("home.hot.errorTitle")}</p>
             <p className="mt-2 text-sm text-red-500">{error}</p>
             <button
               onClick={onRetry}
               className="mt-4 cursor-pointer rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600"
             >
-              重试
+              {t("home.common.retry")}
             </button>
           </div>
         </div>
@@ -97,8 +88,8 @@ const DiscoverHotSearchList = ({
       {!isLoading && !error && items.length === 0 && (
         <div className="flex flex-1 items-center justify-center px-6">
           <div className="w-full max-w-md rounded-2xl border border-gray-100 bg-gray-50 p-6 text-center">
-            <p className="text-sm font-semibold text-gray-700">当前快照暂无热搜</p>
-            <p className="mt-2 text-sm text-gray-500">种子数据或上游采集结果尚未填充这份列表。</p>
+            <p className="text-sm font-semibold text-gray-700">{t("home.hot.empty.title")}</p>
+            <p className="mt-2 text-sm text-gray-500">{t("home.hot.empty.subtitle")}</p>
           </div>
         </div>
       )}
@@ -119,30 +110,30 @@ const DiscoverHotSearchList = ({
                     {item.title}
                   </p>
                   <div className="mt-0.5 flex items-center gap-2 text-xs text-gray-400">
-                    <span>{item.field}</span>
+                    <span>{translateFieldLabel(t, item.field)}</span>
                     <span className="text-gray-300">/</span>
-                    <span>热度 {formatHeat(item.heat)}</span>
+                    <span>{t("home.hot.heat", { heatValue: formatCompactNumber(item.heat, language) })}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   {item.trend === "up" && (
                     <span className="flex items-center gap-0.5 text-xs text-red-500">
                       <i className="ri-arrow-up-s-line text-sm" />
-                      上升
+                      {t("home.hot.trend.up")}
                     </span>
                   )}
                   {item.trend === "down" && (
                     <span className="flex items-center gap-0.5 text-xs text-green-500">
                       <i className="ri-arrow-down-s-line text-sm" />
-                      下降
+                      {t("home.hot.trend.down")}
                     </span>
                   )}
-                  {item.trend === "stable" && <span className="text-xs text-gray-400">持平</span>}
+                  {item.trend === "stable" && <span className="text-xs text-gray-400">{t("home.hot.trend.stable")}</span>}
                   <button
                     onClick={() => navigate(`/writer?title=${encodeURIComponent(item.title)}`)}
                     className="cursor-pointer rounded-md bg-orange-500 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-orange-600"
                   >
-                    去生文
+                    {t("home.hot.actions.write")}
                   </button>
                 </div>
               </div>
@@ -151,7 +142,11 @@ const DiscoverHotSearchList = ({
 
           <div className="flex items-center justify-between border-t border-gray-100 px-5 py-3">
             <p className="text-xs text-gray-400">
-              第 {pagination?.page ?? 1} 页，共 {totalPages} 页，累计 {pagination?.total ?? items.length} 条热搜
+              {t("home.pagination.hotTopics", {
+                currentPage: pagination?.page ?? 1,
+                totalPages,
+                totalItems: (pagination?.total ?? items.length).toLocaleString(locale),
+              })}
             </p>
             <div className="flex items-center gap-1">
               <button
@@ -159,7 +154,7 @@ const DiscoverHotSearchList = ({
                 disabled={!pagination || pagination.page <= 1}
                 className="cursor-pointer rounded-md px-3 py-1.5 text-xs text-gray-500 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
               >
-                上一页
+                {t("home.pagination.previous")}
               </button>
               {visiblePages.map((page) => (
                 <button
@@ -179,7 +174,7 @@ const DiscoverHotSearchList = ({
                 disabled={!pagination || !pagination.has_more}
                 className="cursor-pointer rounded-md px-3 py-1.5 text-xs text-gray-500 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
               >
-                下一页
+                {t("home.pagination.next")}
               </button>
             </div>
           </div>

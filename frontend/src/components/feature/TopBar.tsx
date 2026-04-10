@@ -1,21 +1,9 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { NavLink, useNavigate } from "react-router-dom";
 
+import { LANGUAGE_STORAGE_KEY, SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/i18n";
 import { resolveCurrentUser, type CurrentUser } from "@/lib/auth";
-
-
-const navLinks = [
-  { label: "发现热榜", path: "/" },
-  { label: "提示词库", path: "/prompts" },
-  { label: "智能生文", path: "/writer" },
-  { label: "排版工作台", path: "/layout" },
-  { label: "发布渠道", path: "/channels" },
-  { label: "使用教程", path: "/tutorial" },
-  { label: "联系我们", path: "/contact" },
-  { label: "会员中心", path: "/vip" },
-];
-
-const userMenuItems = ["个人资料", "我的收藏", "账号设置", "退出登录"];
 
 type TopBarProps = {
   title?: string;
@@ -24,6 +12,7 @@ type TopBarProps = {
 
 const TopBar = (_props: TopBarProps) => {
   const navigate = useNavigate();
+  const { t, i18n } = useTranslation();
   const [showUser, setShowUser] = useState(false);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
 
@@ -48,36 +37,61 @@ const TopBar = (_props: TopBarProps) => {
     };
   }, []);
 
-  const userLabel = currentUser?.display_name || "创作者";
+  const navLinks = [
+    { label: t("topbar.nav.discover"), path: "/" },
+    { label: t("topbar.nav.prompts"), path: "/prompts" },
+    { label: t("topbar.nav.writer"), path: "/writer" },
+    { label: t("topbar.nav.layout"), path: "/layout" },
+    { label: t("topbar.nav.channels"), path: "/channels" },
+    { label: t("topbar.nav.tutorial"), path: "/tutorial" },
+    { label: t("topbar.nav.contact"), path: "/contact" },
+    { label: t("topbar.nav.vip"), path: "/vip" },
+  ];
+
+  const userMenuItems = [
+    t("topbar.user.profile"),
+    t("topbar.user.favorites"),
+    t("topbar.user.settings"),
+    t("topbar.user.logout"),
+  ];
+
+  const currentLanguage: SupportedLanguage =
+    (i18n.resolvedLanguage || i18n.language).toLowerCase().startsWith("en") ? "en" : "zh";
+  const userLabel = currentUser?.display_name || t("topbar.user.fallback");
   const userInitial = userLabel.slice(0, 1).toUpperCase();
 
+  const handleLanguageChange = (language: SupportedLanguage) => {
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+    void i18n.changeLanguage(language);
+  };
+
   return (
-    <header className="fixed top-0 left-0 right-0 h-[52px] bg-white border-b border-gray-100 flex items-center z-30 px-4 gap-4">
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <div className="w-7 h-7 flex items-center justify-center">
+    <header className="fixed left-0 right-0 top-0 z-30 flex h-[52px] items-center gap-4 border-b border-gray-100 bg-white px-4">
+      <div className="flex flex-shrink-0 items-center gap-2">
+        <div className="flex h-7 w-7 items-center justify-center">
           <img
             src="https://public.readdy.ai/ai/img_res/89350f87-bb6b-4d30-ba8c-e1a0dae6a3f6.png"
             alt="爆了么"
-            className="w-7 h-7 object-contain"
+            className="h-7 w-7 object-contain"
           />
         </div>
         <div>
-          <p className="text-sm font-bold text-gray-900 leading-tight">爆了么</p>
-          <p className="text-[10px] text-gray-400 leading-tight">内容智能工作台</p>
+          <p className="text-sm font-bold leading-tight text-gray-900">爆了么</p>
+          <p className="text-[10px] leading-tight text-gray-400">{t("topbar.brand.subtitle")}</p>
         </div>
       </div>
 
-      <nav className="flex items-center gap-0.5 flex-1">
+      <nav className="flex flex-1 items-center gap-0.5">
         {navLinks.map((link) => (
           <NavLink
             key={link.path}
             to={link.path}
             end={link.path === "/"}
             className={({ isActive }) =>
-              `px-3 py-1.5 rounded-md text-sm transition-colors cursor-pointer whitespace-nowrap ${
+              `cursor-pointer whitespace-nowrap rounded-md px-3 py-1.5 text-sm transition-colors ${
                 isActive
-                  ? "text-orange-500 font-semibold bg-orange-50"
-                  : "text-gray-600 hover:text-orange-500 hover:bg-orange-50"
+                  ? "bg-orange-50 font-semibold text-orange-500"
+                  : "text-gray-600 hover:bg-orange-50 hover:text-orange-500"
               }`
             }
           >
@@ -86,36 +100,52 @@ const TopBar = (_props: TopBarProps) => {
         ))}
       </nav>
 
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex flex-shrink-0 items-center gap-2">
+        <div className="flex items-center rounded-full bg-gray-100 p-0.5">
+          {SUPPORTED_LANGUAGES.map((language) => (
+            <button
+              key={language}
+              onClick={() => handleLanguageChange(language)}
+              className={`min-w-[44px] rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                currentLanguage === language
+                  ? "bg-white text-orange-500 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {t(`topbar.language.${language}`)}
+            </button>
+          ))}
+        </div>
+
         <button
           onClick={() => navigate("/writer")}
-          className="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white px-4 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer whitespace-nowrap"
+          className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full bg-orange-500 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-orange-600"
         >
-          <div className="w-4 h-4 flex items-center justify-center">
+          <div className="flex h-4 w-4 items-center justify-center">
             <i className="ri-edit-line text-sm" />
           </div>
-          开始生文
+          {t("topbar.actions.startWriting")}
         </button>
 
         <div className="relative">
           <button
             onClick={() => setShowUser((value) => !value)}
-            className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 px-2 py-1 rounded-lg transition-colors"
+            className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-gray-50"
           >
-            <div className="w-7 h-7 flex items-center justify-center rounded-full bg-orange-100 text-orange-500 font-bold text-sm">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-100 text-sm font-bold text-orange-500">
               {userInitial}
             </div>
             <span className="text-sm text-gray-700">{userLabel}</span>
-            <div className="w-3 h-3 flex items-center justify-center">
-              <i className="ri-arrow-down-s-line text-gray-400 text-xs" />
+            <div className="flex h-3 w-3 items-center justify-center">
+              <i className="ri-arrow-down-s-line text-xs text-gray-400" />
             </div>
           </button>
           {showUser && (
-            <div className="absolute right-0 top-10 w-40 bg-white rounded-xl border border-gray-100 overflow-hidden z-50">
+            <div className="absolute right-0 top-10 z-50 w-40 overflow-hidden rounded-xl border border-gray-100 bg-white">
               {userMenuItems.map((item) => (
                 <button
                   key={item}
-                  className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-orange-50 hover:text-orange-500 transition-colors cursor-pointer"
+                  className="w-full cursor-pointer px-4 py-2.5 text-left text-sm text-gray-600 transition-colors hover:bg-orange-50 hover:text-orange-500"
                   onClick={() => setShowUser(false)}
                 >
                   {item}
@@ -128,6 +158,5 @@ const TopBar = (_props: TopBarProps) => {
     </header>
   );
 };
-
 
 export default TopBar;

@@ -9,6 +9,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "live_preview_common.ps1")
+
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\\..")).Path
 $RuntimeDir = Join-Path $RepoRoot ".runtime"
 $LogDir = Join-Path $RuntimeDir "logs"
@@ -17,123 +19,110 @@ $PidDir = Join-Path $RuntimeDir "pids"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 New-Item -ItemType Directory -Force -Path $PidDir | Out-Null
 
-$PythonExe = (Get-Command python -ErrorAction Stop).Source
-$NpmExe = (Get-Command npm.cmd -ErrorAction Stop).Source
+$PowerShellExe = (Get-Command powershell.exe -ErrorAction Stop).Source
 
-function Get-ManagedProcess {
-    param([string]$Name)
-
-    $PidFile = Join-Path $PidDir "$Name.pid"
-    if (-not (Test-Path -LiteralPath $PidFile)) {
-        return $null
-    }
-
-    $PidValue = (Get-Content -LiteralPath $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-    if (-not $PidValue) {
-        return $null
-    }
-
-    $Process = Get-Process -Id $PidValue -ErrorAction SilentlyContinue
-    if (-not $Process) {
-        Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
-        return $null
-    }
-
-    return $Process
-}
-
-function Stop-ManagedProcess {
-    param([string]$Name)
-
-    $PidFile = Join-Path $PidDir "$Name.pid"
-    $Process = Get-ManagedProcess -Name $Name
-    if ($Process) {
-        Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
-    }
-    Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
-}
-
-if ($Restart) {
-    Stop-ManagedProcess -Name "backend-live"
-    Stop-ManagedProcess -Name "frontend-live"
-}
-
-$BackendProcess = Get-ManagedProcess -Name "backend-live"
-if (-not $BackendProcess) {
-    $BackendLog = Join-Path $LogDir "backend-live.log"
-    $BackendErr = Join-Path $LogDir "backend-live.err.log"
-    $BackendProcess = Start-Process -FilePath $PythonExe `
-        -ArgumentList "-m", "uvicorn", "app.main:app", "--reload", "--host", $BackendHost, "--port", "$BackendPort" `
-        -WorkingDirectory (Join-Path $RepoRoot "backend") `
-        -RedirectStandardOutput $BackendLog `
-        -RedirectStandardError $BackendErr `
-        -PassThru
-    Set-Content -LiteralPath (Join-Path $PidDir "backend-live.pid") -Value $BackendProcess.Id
-}
-
-$FrontendProcess = Get-ManagedProcess -Name "frontend-live"
-if (-not $FrontendProcess) {
-    $FrontendLog = Join-Path $LogDir "frontend-live.log"
-    $FrontendErr = Join-Path $LogDir "frontend-live.err.log"
-    $FrontendProcess = Start-Process -FilePath $NpmExe `
-        -ArgumentList "run", "dev", "--", "--host", $FrontendHost, "--port", "$FrontendPort" `
-        -WorkingDirectory (Join-Path $RepoRoot "frontend") `
-        -RedirectStandardOutput $FrontendLog `
-        -RedirectStandardError $FrontendErr `
-        -PassThru
-    Set-Content -LiteralPath (Join-Path $PidDir "frontend-live.pid") -Value $FrontendProcess.Id
-}
+$FrontendLog = Join-Path $LogDir "frontend-live.log"
+$FrontendErr = Join-Path $LogDir "frontend-live.err.log"
+$BackendLog = Join-Path $LogDir "backend-live.log"
+$BackendErr = Join-Path $LogDir "backend-live.err.log"
+$BackendAppLog = Join-Path $LogDir "backend-live.app.log"
+$BackendAppErr = Join-Path $LogDir "backend-live.app.err.log"
 
 $FrontendUrl = "http://$FrontendHost`:$FrontendPort"
 $BackendHealthUrl = "http://$BackendHost`:$BackendPort/health"
 
-function Wait-HttpReady {
+function Start-ManagedScript {
     param(
-        [string]$Url,
-        [string]$Name
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptPath,
+        [Parameter(Mandatory = $true)]
+        [string]$LogPath,
+        [Parameter(Mandatory = $true)]
+        [string]$ErrPath,
+        [string[]]$ScriptArguments = @()
     )
 
-    for ($i = 0; $i -lt 40; $i++) {
-        Start-Sleep -Milliseconds 500
-        try {
-            $Response = Invoke-WebRequest $Url -UseBasicParsing -TimeoutSec 2
-            if ($Response.StatusCode -ge 200 -and $Response.StatusCode -lt 500) {
-                return
-            }
-        } catch {
-        }
-    }
+    $ArgumentList = @(
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        $ScriptPath
+    ) + $ScriptArguments
 
-    Write-Output "$Name 尚未就绪：$Url"
-    if ($Name -eq "frontend") {
-        if (Test-Path -LiteralPath $FrontendLog) {
-            Write-Output "--- 前端实时预览日志 ---"
-            Get-Content -LiteralPath $FrontendLog -Tail 80
-        }
-        if (Test-Path -LiteralPath $FrontendErr) {
-            Write-Output "--- 前端实时预览错误日志 ---"
-            Get-Content -LiteralPath $FrontendErr -Tail 80
-        }
-    } else {
-        if (Test-Path -LiteralPath $BackendLog) {
-            Write-Output "--- 后端实时预览日志 ---"
-            Get-Content -LiteralPath $BackendLog -Tail 80
-        }
-        if (Test-Path -LiteralPath $BackendErr) {
-            Write-Output "--- 后端实时预览错误日志 ---"
-            Get-Content -LiteralPath $BackendErr -Tail 80
-        }
-    }
+    $Process = Start-Process -FilePath $PowerShellExe `
+        -ArgumentList $ArgumentList `
+        -WorkingDirectory $RepoRoot `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $LogPath `
+        -RedirectStandardError $ErrPath `
+        -PassThru
 
-    throw "$Name 启动失败"
+    Set-ManagedProcessPid -PidDir $PidDir -Name $Name -ProcessId $Process.Id
+    return $Process
 }
 
-Wait-HttpReady -Url $BackendHealthUrl -Name "backend"
-Wait-HttpReady -Url $FrontendUrl -Name "frontend"
+function Ensure-ManagedService {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [Parameter(Mandatory = $true)]
+        [string]$ReadyUrl,
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Starter
+    )
 
-Write-Output "前端实时预览：$FrontendUrl"
-Write-Output "后端健康检查：$BackendHealthUrl"
-Write-Output "日志目录：$LogDir"
+    $Process = Get-ManagedProcess -PidDir $PidDir -Name $Name
+    if ($Process -and -not (Test-HttpReady -Url $ReadyUrl)) {
+        Stop-ManagedProcess -PidDir $PidDir -Name $Name
+        $Process = $null
+    }
+
+    if (-not $Process) {
+        & $Starter | Out-Null
+    }
+}
+
+if ($Restart) {
+    Stop-ManagedProcess -PidDir $PidDir -Name "backend-live-child"
+    Stop-ManagedProcess -PidDir $PidDir -Name "backend-live"
+    Stop-ManagedProcess -PidDir $PidDir -Name "frontend-live"
+}
+
+Ensure-ManagedService -Name "backend-live" -ReadyUrl $BackendHealthUrl -Starter {
+    Start-ManagedScript `
+        -Name "backend-live" `
+        -ScriptPath (Join-Path $PSScriptRoot "backend_live_supervisor.ps1") `
+        -LogPath $BackendLog `
+        -ErrPath $BackendErr `
+        -ScriptArguments @(
+            "-RepoRoot", $RepoRoot,
+            "-BackendHost", $BackendHost,
+            "-BackendPort", "$BackendPort"
+        )
+}
+
+Ensure-ManagedService -Name "frontend-live" -ReadyUrl $FrontendUrl -Starter {
+    Start-ManagedScript `
+        -Name "frontend-live" `
+        -ScriptPath (Join-Path $PSScriptRoot "frontend_live_runner.ps1") `
+        -LogPath $FrontendLog `
+        -ErrPath $FrontendErr `
+        -ScriptArguments @(
+            "-RepoRoot", $RepoRoot,
+            "-FrontendHost", $FrontendHost,
+            "-FrontendPort", "$FrontendPort"
+        )
+}
+
+Wait-HttpReady -Url $BackendHealthUrl -Name "backend" -LogPath $BackendAppLog -ErrPath $BackendAppErr
+Wait-HttpReady -Url $FrontendUrl -Name "frontend" -LogPath $FrontendLog -ErrPath $FrontendErr
+
+Write-Output "Frontend live preview: $FrontendUrl"
+Write-Output "Backend health check: $BackendHealthUrl"
+Write-Output "Logs: $LogDir"
 
 if ($OpenBrowser) {
     Start-Process $FrontendUrl

@@ -313,3 +313,10 @@
 - Homepage states now explicitly cover loading, empty, error, and success.
 - Favorite and export remain follow-up work and are not counted as part of `P0-02`.
 - Removed the unregistered `src/pages/editor/page.tsx` prototype, unused home-only experiment components, and the orphaned `src/mocks/editor.ts` / `src/mocks/dashboard.ts` files.
+
+## 2026-04-10 Discover UI Update
+
+- TopBar now exposes a `中文 / EN` language toggle and the frontend defaults to Chinese.
+- The current bilingual scope covers global navigation and the homepage discover surface.
+- Homepage article list and hot topic list now default to `10` items per page and allow `10 / 20 / 50 / 100`.
+- Page size switching keeps the existing discover contract and continues to pass `page_size` to the backend.

@@ -1,25 +1,12 @@
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "live_preview_common.ps1")
+
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\\..")).Path
 $PidDir = Join-Path $RepoRoot ".runtime\\pids"
 
-function Stop-ManagedProcess {
-    param([string]$Name)
+Stop-ManagedProcess -PidDir $PidDir -Name "backend-live-child"
+Stop-ManagedProcess -PidDir $PidDir -Name "backend-live"
+Stop-ManagedProcess -PidDir $PidDir -Name "frontend-live"
 
-    $PidFile = Join-Path $PidDir "$Name.pid"
-    if (-not (Test-Path -LiteralPath $PidFile)) {
-        return
-    }
-
-    $PidValue = (Get-Content -LiteralPath $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-    if ($PidValue) {
-        Stop-Process -Id $PidValue -Force -ErrorAction SilentlyContinue
-    }
-
-    Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
-}
-
-Stop-ManagedProcess -Name "backend-live"
-Stop-ManagedProcess -Name "frontend-live"
-
-Write-Output "已停止受管控的实时预览进程。"
+Write-Output "Stopped managed live preview processes."

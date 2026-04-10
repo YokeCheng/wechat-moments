@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type {
   DiscoverArticleList,
@@ -7,47 +8,24 @@ import type {
   HotTopicList,
 } from "@/lib/discover";
 import { fetchDiscoverArticles, fetchHotTopics } from "@/lib/discover";
+import {
+  ALL_FIELD_VALUE,
+  DEFAULT_PAGE_SIZE,
+  FIELD_OPTIONS,
+  PAGE_SIZE_OPTIONS,
+  TIME_OPTIONS,
+  VIEW_OPTIONS,
+  type TabKey,
+  translateFieldLabel,
+} from "./constants";
 import DiscoverArticleTable from "./components/DiscoverArticleTable";
 import DiscoverHotSearchList from "./components/DiscoverHotSearchList";
-
-type TabKey = "weixin" | "toutiao" | "hot";
 
 type Loadable<T> = {
   status: "idle" | "loading" | "success" | "error";
   data: T | null;
   error: string | null;
 };
-
-const ARTICLE_PAGE_SIZE = 5;
-const HOT_TOPIC_PAGE_SIZE = 6;
-const ALL_FIELD_LABEL = "全部";
-
-const tabs: { key: TabKey; label: string }[] = [
-  { key: "weixin", label: "微信文章" },
-  { key: "toutiao", label: "头条文章" },
-  { key: "hot", label: "热搜榜" },
-];
-
-const fieldOptions: Record<Exclude<TabKey, "hot">, string[]> = {
-  weixin: [ALL_FIELD_LABEL, "情感", "健康", "财经", "教育", "科技", "旅游"],
-  toutiao: [ALL_FIELD_LABEL, "国际", "体育", "财经", "科技", "健康", "汽车"],
-};
-
-const timeOptions: { label: string; value: DiscoverTimeRange }[] = [
-  { label: "全部时间", value: "all" },
-  { label: "1天内", value: "1d" },
-  { label: "3天内", value: "3d" },
-  { label: "7天内", value: "7d" },
-  { label: "1个月内", value: "1m" },
-  { label: "3个月内", value: "3m" },
-];
-
-const viewOptions: { label: string; value?: number }[] = [
-  { label: "不限阅读" },
-  { label: "1万+", value: 10000 },
-  { label: "5万+", value: 50000 },
-  { label: "10万+", value: 100000 },
-];
 
 const defaultArticlesState: Loadable<DiscoverArticleList> = {
   status: "loading",
@@ -61,26 +39,46 @@ const defaultHotTopicsState: Loadable<HotTopicList> = {
   error: null,
 };
 
-function toErrorMessage(error: unknown) {
+function toErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) {
     return error.message;
   }
-  return "请求失败，请稍后重试";
+  return fallback;
 }
 
 const HomePage = () => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabKey>("weixin");
-  const [activeField, setActiveField] = useState(ALL_FIELD_LABEL);
+  const [activeField, setActiveField] = useState(ALL_FIELD_VALUE);
   const [activeTime, setActiveTime] = useState<DiscoverTimeRange>("all");
   const [activeViews, setActiveViews] = useState<number | undefined>(undefined);
   const [searchText, setSearchText] = useState("");
   const [filterExpanded, setFilterExpanded] = useState(true);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [articlePage, setArticlePage] = useState(1);
   const [hotTopicPage, setHotTopicPage] = useState(1);
   const [articleReloadKey, setArticleReloadKey] = useState(0);
   const [hotTopicReloadKey, setHotTopicReloadKey] = useState(0);
   const [articlesState, setArticlesState] = useState(defaultArticlesState);
   const [hotTopicsState, setHotTopicsState] = useState(defaultHotTopicsState);
+  const requestFallbackMessage = t("home.error.requestFailed");
+
+  const tabs: { key: TabKey; label: string }[] = [
+    { key: "weixin", label: t("home.tabs.weixin") },
+    { key: "toutiao", label: t("home.tabs.toutiao") },
+    { key: "hot", label: t("home.tabs.hot") },
+  ];
+
+  const timeOptions: { label: string; value: DiscoverTimeRange }[] = TIME_OPTIONS.map((value) => ({
+    label: t(`home.time.${value}`),
+    value,
+  }));
+
+  const viewOptions: { key: string; label: string; value?: number }[] = VIEW_OPTIONS.map((option) => ({
+    key: option.key,
+    label: t(`home.views.${option.key}`),
+    value: option.value,
+  }));
 
   useEffect(() => {
     if (activeTab === "hot") {
@@ -97,11 +95,11 @@ const HomePage = () => {
     fetchDiscoverArticles({
       platform: activeTab as DiscoverPlatform,
       keyword: searchText.trim() || undefined,
-      field: activeField === ALL_FIELD_LABEL ? undefined : activeField,
+      field: activeField === ALL_FIELD_VALUE ? undefined : activeField,
       time_range: activeTime,
       views_min: activeViews,
       page: articlePage,
-      page_size: ARTICLE_PAGE_SIZE,
+      page_size: pageSize,
     })
       .then((data) => {
         if (cancelled) {
@@ -120,14 +118,24 @@ const HomePage = () => {
         setArticlesState({
           status: "error",
           data: null,
-          error: toErrorMessage(error),
+          error: toErrorMessage(error, requestFallbackMessage),
         });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [activeField, activeTab, activeTime, activeViews, articlePage, articleReloadKey, searchText]);
+  }, [
+    activeField,
+    activeTab,
+    activeTime,
+    activeViews,
+    articlePage,
+    articleReloadKey,
+    pageSize,
+    requestFallbackMessage,
+    searchText,
+  ]);
 
   useEffect(() => {
     if (activeTab !== "hot") {
@@ -143,7 +151,7 @@ const HomePage = () => {
 
     fetchHotTopics({
       page: hotTopicPage,
-      page_size: HOT_TOPIC_PAGE_SIZE,
+      page_size: pageSize,
     })
       .then((data) => {
         if (cancelled) {
@@ -162,24 +170,24 @@ const HomePage = () => {
         setHotTopicsState({
           status: "error",
           data: null,
-          error: toErrorMessage(error),
+          error: toErrorMessage(error, requestFallbackMessage),
         });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [activeTab, hotTopicPage, hotTopicReloadKey]);
+  }, [activeTab, hotTopicPage, hotTopicReloadKey, pageSize, requestFallbackMessage]);
 
   const activeFilterCount = [
-    activeField !== ALL_FIELD_LABEL,
+    activeField !== ALL_FIELD_VALUE,
     activeTime !== "all",
     activeViews !== undefined,
     searchText.trim() !== "",
   ].filter(Boolean).length;
 
   const currentFieldOptions =
-    activeTab === "hot" ? [] : fieldOptions[activeTab as Exclude<TabKey, "hot">];
+    activeTab === "hot" ? [] : FIELD_OPTIONS[activeTab as Exclude<TabKey, "hot">];
 
   const handleTabChange = (tab: TabKey) => {
     setActiveTab(tab);
@@ -188,7 +196,7 @@ const HomePage = () => {
       return;
     }
 
-    setActiveField(ALL_FIELD_LABEL);
+    setActiveField(ALL_FIELD_VALUE);
     setActiveTime("all");
     setActiveViews(undefined);
     setSearchText("");
@@ -196,17 +204,27 @@ const HomePage = () => {
   };
 
   const handleReset = () => {
-    setActiveField(ALL_FIELD_LABEL);
+    setActiveField(ALL_FIELD_VALUE);
     setActiveTime("all");
     setActiveViews(undefined);
     setSearchText("");
     setArticlePage(1);
   };
 
+  const handlePageSizeChange = (nextValue: string) => {
+    const nextPageSize = Number(nextValue);
+    if (Number.isNaN(nextPageSize)) {
+      return;
+    }
+    setPageSize(nextPageSize);
+    setArticlePage(1);
+    setHotTopicPage(1);
+  };
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-[#F7F8FA]">
       <div className="flex-shrink-0 border-b border-gray-100 bg-white">
-        <div className="flex items-center gap-3 px-6 py-3">
+        <div className="flex flex-wrap items-center gap-3 px-6 py-3">
           <div className="flex items-center gap-1 rounded-full bg-gray-100 p-1">
             {tabs.map((tab) => (
               <button
@@ -234,7 +252,7 @@ const HomePage = () => {
                     setSearchText(event.target.value);
                     setArticlePage(1);
                   }}
-                  placeholder="搜索标题或作者"
+                  placeholder={t("home.search.placeholder")}
                   className="flex-1 bg-transparent text-sm text-gray-700 outline-none placeholder:text-gray-300"
                 />
                 {searchText && (
@@ -255,26 +273,41 @@ const HomePage = () => {
                   onClick={handleReset}
                   className="cursor-pointer whitespace-nowrap rounded-full bg-orange-50 px-2.5 py-1.5 text-xs text-orange-500 transition-colors hover:bg-orange-100"
                 >
-                  已启用 {activeFilterCount} 个筛选，重置
+                  {t("home.filters.resetWithCount", { selectedCount: activeFilterCount })}
                 </button>
               )}
-
-              <div className="ml-auto">
-                <button
-                  onClick={() => setFilterExpanded((current) => !current)}
-                  className="cursor-pointer whitespace-nowrap rounded-lg bg-gray-50 px-3 py-1.5 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
-                >
-                  {filterExpanded ? "收起筛选" : "展开筛选"}
-                </button>
-              </div>
             </>
           )}
+
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-xs text-gray-400">{t("home.pageSize.label")}</span>
+            <select
+              value={pageSize}
+              onChange={(event) => handlePageSizeChange(event.target.value)}
+              className="cursor-pointer rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 outline-none transition-colors hover:border-gray-300"
+            >
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+
+            {activeTab !== "hot" && (
+              <button
+                onClick={() => setFilterExpanded((current) => !current)}
+                className="cursor-pointer whitespace-nowrap rounded-lg bg-gray-50 px-3 py-1.5 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+              >
+                {filterExpanded ? t("home.filters.collapse") : t("home.filters.expand")}
+              </button>
+            )}
+          </div>
         </div>
 
         {activeTab !== "hot" && filterExpanded && (
           <div className="space-y-3 border-t border-gray-50 px-6 pb-3 pt-3">
             <div className="flex items-start gap-2">
-              <span className="mt-1.5 w-16 flex-shrink-0 text-xs text-gray-400">领域</span>
+              <span className="mt-1.5 w-16 flex-shrink-0 text-xs text-gray-400">{t("home.filters.field")}</span>
               <div className="flex flex-wrap gap-1">
                 {currentFieldOptions.map((option) => (
                   <button
@@ -289,7 +322,7 @@ const HomePage = () => {
                         : "text-gray-500 hover:bg-gray-100 hover:text-gray-700"
                     }`}
                   >
-                    {option}
+                    {translateFieldLabel(t, option)}
                   </button>
                 ))}
               </div>
@@ -297,7 +330,7 @@ const HomePage = () => {
 
             <div className="flex flex-wrap items-center gap-6">
               <div className="flex items-center gap-2">
-                <span className="w-16 flex-shrink-0 text-xs text-gray-400">时间</span>
+                <span className="w-16 flex-shrink-0 text-xs text-gray-400">{t("home.filters.time")}</span>
                 <div className="flex flex-wrap items-center gap-1">
                   {timeOptions.map((option) => (
                     <button
@@ -319,11 +352,11 @@ const HomePage = () => {
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="w-16 flex-shrink-0 text-xs text-gray-400">阅读量</span>
+                <span className="w-16 flex-shrink-0 text-xs text-gray-400">{t("home.filters.views")}</span>
                 <div className="flex flex-wrap items-center gap-1">
                   {viewOptions.map((option) => (
                     <button
-                      key={option.label}
+                      key={option.key}
                       onClick={() => {
                         setActiveViews(option.value);
                         setArticlePage(1);

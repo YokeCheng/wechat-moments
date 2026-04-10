@@ -62,6 +62,27 @@
   - 默认面向局域网地址 `172.16.10.191`
   - 基础设施覆盖 PostgreSQL / Redis / MinIO / pgAdmin
 
+### G0-03 Frontend Language Foundation
+
+- status: `done`
+- goal: 为全局导航与首页发现建立可持续扩展的中英双语切换基础
+- user_value: 用户可在中文与英文界面之间切换，首页与导航不再依赖单语言硬编码
+- frontend_routes:
+  - global navigation
+  - `/`
+- backend_endpoints:
+  - none
+- data_entities:
+  - none
+- dependencies:
+  - `G0-01`
+  - `P0-02`
+- acceptance:
+  - 前端默认语言为中文，并支持切换为英文
+  - 顶部导航提供语言切换入口
+  - 首页发现页与全局导航主要文案改为 i18n 资源驱动
+  - 语言切换不改变 discover 接口契约与后端字段值
+
 ## 3. P0 切片
 
 ### P0-01 Auth And Current User
@@ -103,6 +124,7 @@
 - acceptance:
   - 首页文章列表来自真实接口
   - 热搜榜来自真实接口
+  - 首页文章与热搜列表默认每页 10 条，并支持 10 / 20 / 50 / 100 档位切换
   - 页面有 loading / empty / error / success 状态
   - `articles.ts` 不再作为主数据源
 
