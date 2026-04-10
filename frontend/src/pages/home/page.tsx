@@ -20,32 +20,33 @@ type Loadable<T> = {
 
 const ARTICLE_PAGE_SIZE = 5;
 const HOT_TOPIC_PAGE_SIZE = 6;
+const ALL_FIELD_LABEL = "全部";
 
 const tabs: { key: TabKey; label: string }[] = [
-  { key: "weixin", label: "Weixin Articles" },
-  { key: "toutiao", label: "Toutiao Articles" },
-  { key: "hot", label: "Hot Topics" },
+  { key: "weixin", label: "微信文章" },
+  { key: "toutiao", label: "头条文章" },
+  { key: "hot", label: "热搜榜" },
 ];
 
 const fieldOptions: Record<Exclude<TabKey, "hot">, string[]> = {
-  weixin: ["All", "Emotion", "Health", "Finance", "Education", "Technology", "Travel"],
-  toutiao: ["All", "World", "Sports", "Finance", "Technology", "Health", "Auto"],
+  weixin: [ALL_FIELD_LABEL, "情感", "健康", "财经", "教育", "科技", "旅游"],
+  toutiao: [ALL_FIELD_LABEL, "国际", "体育", "财经", "科技", "健康", "汽车"],
 };
 
 const timeOptions: { label: string; value: DiscoverTimeRange }[] = [
-  { label: "All time", value: "all" },
-  { label: "1 day", value: "1d" },
-  { label: "3 days", value: "3d" },
-  { label: "7 days", value: "7d" },
-  { label: "1 month", value: "1m" },
-  { label: "3 months", value: "3m" },
+  { label: "全部时间", value: "all" },
+  { label: "1天内", value: "1d" },
+  { label: "3天内", value: "3d" },
+  { label: "7天内", value: "7d" },
+  { label: "1个月内", value: "1m" },
+  { label: "3个月内", value: "3m" },
 ];
 
 const viewOptions: { label: string; value?: number }[] = [
-  { label: "Any views" },
-  { label: "10k+", value: 10000 },
-  { label: "50k+", value: 50000 },
-  { label: "100k+", value: 100000 },
+  { label: "不限阅读" },
+  { label: "1万+", value: 10000 },
+  { label: "5万+", value: 50000 },
+  { label: "10万+", value: 100000 },
 ];
 
 const defaultArticlesState: Loadable<DiscoverArticleList> = {
@@ -64,12 +65,12 @@ function toErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) {
     return error.message;
   }
-  return "Request failed";
+  return "请求失败，请稍后重试";
 }
 
 const HomePage = () => {
   const [activeTab, setActiveTab] = useState<TabKey>("weixin");
-  const [activeField, setActiveField] = useState("All");
+  const [activeField, setActiveField] = useState(ALL_FIELD_LABEL);
   const [activeTime, setActiveTime] = useState<DiscoverTimeRange>("all");
   const [activeViews, setActiveViews] = useState<number | undefined>(undefined);
   const [searchText, setSearchText] = useState("");
@@ -96,7 +97,7 @@ const HomePage = () => {
     fetchDiscoverArticles({
       platform: activeTab as DiscoverPlatform,
       keyword: searchText.trim() || undefined,
-      field: activeField === "All" ? undefined : activeField,
+      field: activeField === ALL_FIELD_LABEL ? undefined : activeField,
       time_range: activeTime,
       views_min: activeViews,
       page: articlePage,
@@ -171,7 +172,7 @@ const HomePage = () => {
   }, [activeTab, hotTopicPage, hotTopicReloadKey]);
 
   const activeFilterCount = [
-    activeField !== "All",
+    activeField !== ALL_FIELD_LABEL,
     activeTime !== "all",
     activeViews !== undefined,
     searchText.trim() !== "",
@@ -187,7 +188,7 @@ const HomePage = () => {
       return;
     }
 
-    setActiveField("All");
+    setActiveField(ALL_FIELD_LABEL);
     setActiveTime("all");
     setActiveViews(undefined);
     setSearchText("");
@@ -195,7 +196,7 @@ const HomePage = () => {
   };
 
   const handleReset = () => {
-    setActiveField("All");
+    setActiveField(ALL_FIELD_LABEL);
     setActiveTime("all");
     setActiveViews(undefined);
     setSearchText("");
@@ -233,7 +234,7 @@ const HomePage = () => {
                     setSearchText(event.target.value);
                     setArticlePage(1);
                   }}
-                  placeholder="Search title or author"
+                  placeholder="搜索标题或作者"
                   className="flex-1 bg-transparent text-sm text-gray-700 outline-none placeholder:text-gray-300"
                 />
                 {searchText && (
@@ -254,7 +255,7 @@ const HomePage = () => {
                   onClick={handleReset}
                   className="cursor-pointer whitespace-nowrap rounded-full bg-orange-50 px-2.5 py-1.5 text-xs text-orange-500 transition-colors hover:bg-orange-100"
                 >
-                  {activeFilterCount} filters active. Reset
+                  已启用 {activeFilterCount} 个筛选，重置
                 </button>
               )}
 
@@ -263,7 +264,7 @@ const HomePage = () => {
                   onClick={() => setFilterExpanded((current) => !current)}
                   className="cursor-pointer whitespace-nowrap rounded-lg bg-gray-50 px-3 py-1.5 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
                 >
-                  {filterExpanded ? "Collapse filters" : "Expand filters"}
+                  {filterExpanded ? "收起筛选" : "展开筛选"}
                 </button>
               </div>
             </>
@@ -273,7 +274,7 @@ const HomePage = () => {
         {activeTab !== "hot" && filterExpanded && (
           <div className="space-y-3 border-t border-gray-50 px-6 pb-3 pt-3">
             <div className="flex items-start gap-2">
-              <span className="mt-1.5 w-16 flex-shrink-0 text-xs text-gray-400">Field</span>
+              <span className="mt-1.5 w-16 flex-shrink-0 text-xs text-gray-400">领域</span>
               <div className="flex flex-wrap gap-1">
                 {currentFieldOptions.map((option) => (
                   <button
@@ -296,7 +297,7 @@ const HomePage = () => {
 
             <div className="flex flex-wrap items-center gap-6">
               <div className="flex items-center gap-2">
-                <span className="w-16 flex-shrink-0 text-xs text-gray-400">Time</span>
+                <span className="w-16 flex-shrink-0 text-xs text-gray-400">时间</span>
                 <div className="flex flex-wrap items-center gap-1">
                   {timeOptions.map((option) => (
                     <button
@@ -318,7 +319,7 @@ const HomePage = () => {
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="w-16 flex-shrink-0 text-xs text-gray-400">Views</span>
+                <span className="w-16 flex-shrink-0 text-xs text-gray-400">阅读量</span>
                 <div className="flex flex-wrap items-center gap-1">
                   {viewOptions.map((option) => (
                     <button

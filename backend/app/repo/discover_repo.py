@@ -34,6 +34,38 @@ def create_hot_topic(db: Session, **payload: Any) -> HotTopic:
     return topic
 
 
+def get_discover_article_by_id(db: Session, article_id: str) -> DiscoverArticle | None:
+    return db.get(DiscoverArticle, article_id)
+
+
+def get_hot_topic_by_id(db: Session, topic_id: str) -> HotTopic | None:
+    return db.get(HotTopic, topic_id)
+
+
+def upsert_discover_article(db: Session, **payload: Any) -> DiscoverArticle:
+    article_id = str(payload["id"])
+    article = get_discover_article_by_id(db, article_id)
+    if article is None:
+        return create_discover_article(db, **payload)
+
+    for key, value in payload.items():
+        setattr(article, key, value)
+    db.flush()
+    return article
+
+
+def upsert_hot_topic(db: Session, **payload: Any) -> HotTopic:
+    topic_id = str(payload["id"])
+    topic = get_hot_topic_by_id(db, topic_id)
+    if topic is None:
+        return create_hot_topic(db, **payload)
+
+    for key, value in payload.items():
+        setattr(topic, key, value)
+    db.flush()
+    return topic
+
+
 def query_discover_articles(
     db: Session,
     filters: DiscoverArticleQuery,

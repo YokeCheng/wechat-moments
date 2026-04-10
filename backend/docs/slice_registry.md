@@ -1,6 +1,6 @@
-# Slice Registry
+# 切片注册表
 
-## 1. Purpose
+## 1. 目的
 
 本文件将“爆了么”平台拆分成一组可执行的纵向切片（Slice），作为开发和验收的基本单位。
 
@@ -18,7 +18,7 @@
 - `done`：达到完成定义
 - `deferred`：推迟到后续阶段
 
-## 2. Governance Registry
+## 2. 治理切片
 
 ### G0-01 Harness Execution Foundation
 
@@ -33,11 +33,11 @@
   - none
 - dependencies: none
 - acceptance:
-  - `tools/harness` 提供 required docs / OpenAPI parse / slice endpoint coverage / dead route / mock critical path 检查
-  - `.github/workflows` 提供最小 doc integrity 与 drift integrity workflow
+  - `tools/harness` 提供 required docs、OpenAPI 解析、切片接口覆盖、死路由与关键 mock 路径检查
+  - `.github/workflows` 提供最小文档完整性与漂移完整性 workflow
   - `traceability_matrix.md` 已登记该治理切片
 
-Additional governance assets delivered for `G0-01`:
+`G0-01` 额外交付的治理资产：
 
 - root `PROJECT_CONSENSUS.md`
 - `tools/dev/start_live_preview.ps1`
@@ -62,7 +62,7 @@ Additional governance assets delivered for `G0-01`:
   - 默认面向局域网地址 `172.16.10.191`
   - 基础设施覆盖 PostgreSQL / Redis / MinIO / pgAdmin
 
-## 3. P0 Registry
+## 3. P0 切片
 
 ### P0-01 Auth And Current User
 
@@ -223,7 +223,7 @@ Additional governance assets delivered for `G0-01`:
   - 封面图可上传并返回资产 ID / URL
   - 排版草稿能引用上传资源
 
-## 4. P1 Registry
+## 4. P1 切片
 
 ### P1-01 Discover Favorite And Export
 
@@ -319,7 +319,7 @@ Additional governance assets delivered for `G0-01`:
   - 订单可创建
   - 用量可展示
 
-## 5. P2 Registry
+## 5. P2 切片
 
 ### P2-01 Tutorial CMS
 
@@ -336,7 +336,7 @@ Additional governance assets delivered for `G0-01`:
 - status: `deferred`
 - goal: 将 `dashboard.ts` 对应能力接入真实数据源
 
-## 6. Recommended Execution Order
+## 6. 推荐执行顺序
 
 推荐按以下顺序推进：
 
@@ -357,7 +357,7 @@ Additional governance assets delivered for `G0-01`:
 - 先闭环主内容生产链路
 - 再接入联系、发布和商业化
 
-## 7. Completion Rule
+## 7. 完成规则
 
 任何 Slice 只有在以下条件同时满足时，才允许把 `status` 改为 `done`：
 

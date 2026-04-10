@@ -35,7 +35,7 @@ def test_discover_articles_support_filters_and_pagination(client: TestClient) ->
         "/api/v1/discover/articles",
         params={
             "platform": "weixin",
-            "field": "Technology",
+            "field": "科技",
             "time_range": "1m",
             "views_min": 100000,
             "keyword": "AI",
@@ -56,7 +56,7 @@ def test_discover_articles_support_filters_and_pagination(client: TestClient) ->
     assert len(payload["items"]) == 1
     item = payload["items"][0]
     assert item["platform"] == "weixin"
-    assert item["field"] == "Technology"
+    assert item["field"] == "科技"
     assert item["views"] >= 100000
     assert "AI" in item["title"]
 

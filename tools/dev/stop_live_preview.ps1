@@ -22,4 +22,4 @@ function Stop-ManagedProcess {
 Stop-ManagedProcess -Name "backend-live"
 Stop-ManagedProcess -Name "frontend-live"
 
-Write-Output "Stopped managed live preview processes."
+Write-Output "已停止受管控的实时预览进程。"

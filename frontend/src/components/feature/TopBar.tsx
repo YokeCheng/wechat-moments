@@ -5,17 +5,17 @@ import { resolveCurrentUser, type CurrentUser } from "@/lib/auth";
 
 
 const navLinks = [
-  { label: "Daily Hot", path: "/" },
-  { label: "Prompt Library", path: "/prompts" },
-  { label: "AI Writer", path: "/writer" },
-  { label: "Layout", path: "/layout" },
-  { label: "Channels", path: "/channels" },
-  { label: "Tutorial", path: "/tutorial" },
-  { label: "Contact", path: "/contact" },
-  { label: "VIP", path: "/vip" },
+  { label: "发现热榜", path: "/" },
+  { label: "提示词库", path: "/prompts" },
+  { label: "智能生文", path: "/writer" },
+  { label: "排版工作台", path: "/layout" },
+  { label: "发布渠道", path: "/channels" },
+  { label: "使用教程", path: "/tutorial" },
+  { label: "联系我们", path: "/contact" },
+  { label: "会员中心", path: "/vip" },
 ];
 
-const userMenuItems = ["Profile", "Favorites", "Settings", "Sign out"];
+const userMenuItems = ["个人资料", "我的收藏", "账号设置", "退出登录"];
 
 type TopBarProps = {
   title?: string;
@@ -48,7 +48,7 @@ const TopBar = (_props: TopBarProps) => {
     };
   }, []);
 
-  const userLabel = currentUser?.display_name || "Creator";
+  const userLabel = currentUser?.display_name || "创作者";
   const userInitial = userLabel.slice(0, 1).toUpperCase();
 
   return (
@@ -57,15 +57,13 @@ const TopBar = (_props: TopBarProps) => {
         <div className="w-7 h-7 flex items-center justify-center">
           <img
             src="https://public.readdy.ai/ai/img_res/89350f87-bb6b-4d30-ba8c-e1a0dae6a3f6.png"
-            alt="Baoleme"
+            alt="爆了么"
             className="w-7 h-7 object-contain"
           />
         </div>
         <div>
-          <p className="text-sm font-bold text-gray-900 leading-tight">Baoleme</p>
-          <p className="text-[10px] text-gray-400 leading-tight">
-            Content intelligence workspace
-          </p>
+          <p className="text-sm font-bold text-gray-900 leading-tight">爆了么</p>
+          <p className="text-[10px] text-gray-400 leading-tight">内容智能工作台</p>
         </div>
       </div>
 
@@ -96,7 +94,7 @@ const TopBar = (_props: TopBarProps) => {
           <div className="w-4 h-4 flex items-center justify-center">
             <i className="ri-edit-line text-sm" />
           </div>
-          AI Writer
+          开始生文
         </button>
 
         <div className="relative">

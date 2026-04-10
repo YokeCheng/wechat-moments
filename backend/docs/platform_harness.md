@@ -1,6 +1,6 @@
-# Platform Development Harness
+# 平台开发 Harness
 
-## 0. Supporting Docs
+## 0. 支撑文档
 
 本文件负责总规则，其它执行层文档分工如下：
 
@@ -36,7 +36,7 @@
 - `backend/docs/p0_02_discover_execution_pack.md`
   - 作为第一条 P0 Slice 的落地样板
 
-## 1. Purpose
+## 1. 目的
 
 本文件定义“爆了么”平台的开发 Harness，用于约束整个平台按统一标准推进，而不是按页面零散堆代码。
 
@@ -80,7 +80,7 @@ Harness 的作用，是把这些文档从“静态资料”升级为“开发门
   - 该覆盖哪些测试
   - 什么算完成
 
-## 3. Core Principles
+## 3. 核心原则
 
 ### 3.1 Spec Before Code
 
@@ -130,7 +130,7 @@ Harness 的作用，是把这些文档从“静态资料”升级为“开发门
 - 有异常路径
 - 有可验证结果
 
-## 4. Harness Layers
+## 4. Harness 分层
 
 Harness 分 6 层，从上到下逐级收紧。
 
@@ -192,10 +192,10 @@ Harness 分 6 层，从上到下逐级收紧。
 - 列表查询实体必须提前定义分页和排序策略
 - 删除行为必须明确是软删、硬删还是转移归属
 
-Runtime database rule:
+运行时数据库规则：
 
-- Runtime databases for `local`, `lan`, `staging`, and `prod` must use PostgreSQL.
-- SQLite is test-only and must not be used as the runtime database for app execution.
+- `local`、`lan`、`staging` 和 `prod` 的运行时数据库必须使用 PostgreSQL。
+- SQLite 仅允许用于测试，不能作为应用执行时的运行时数据库。
 
 ## 4.5 Test Harness
 
@@ -217,7 +217,7 @@ Runtime database rule:
 - 未达到阶段门禁，不得宣称该阶段完成
 - 每个里程碑必须有一份“通过清单”
 
-## 5. Development Unit: Slice
+## 5. 开发单位：Slice
 
 Harness 下的最小开发单位是 `Slice`。
 
@@ -237,7 +237,7 @@ Harness 下的最小开发单位是 `Slice`。
 - `acceptance_criteria`
 - `test_requirements`
 
-### 5.1 Slice Template
+### 5.1 Slice 模板
 
 ```yaml
 slice_id: P0-03
@@ -275,11 +275,11 @@ test_requirements:
   - Prompt status transition test
 ```
 
-## 6. Platform Slice Map
+## 6. 平台切片地图
 
 下面是建议的整个平台切片图，按优先级推进。
 
-## 6.1 P0 Slices
+## 6.1 P0 切片
 
 ### P0-01 Auth & Current User
 
@@ -332,7 +332,7 @@ test_requirements:
 - 核心接口：
   - `POST /api/v1/assets`
 
-## 6.2 P1 Slices
+## 6.2 P1 切片
 
 ### P1-01 Discover Favorite & Export
 
@@ -361,7 +361,7 @@ test_requirements:
 - 订阅
 - 用量限制
 
-## 6.3 P2 Slices
+## 6.3 P2 切片
 
 ### P2-01 Tutorial CMS
 
@@ -375,11 +375,11 @@ test_requirements:
 
 - 把 `dashboard.ts` 对应能力转为真实模块
 
-## 7. Definition of Done
+## 7. 完成定义
 
 Harness 的关键是 DoD 不是“代码写完”，而是“能力闭环”。
 
-## 7.1 Endpoint DoD
+## 7.1 接口完成定义
 
 任何后端接口完成，必须同时满足：
 
@@ -390,7 +390,7 @@ Harness 的关键是 DoD 不是“代码写完”，而是“能力闭环”。
 - 有至少一条契约测试
 - 有至少一条成功路径集成测试
 
-## 7.2 Page Integration DoD
+## 7.2 页面集成完成定义
 
 任何页面能力接入后端，必须同时满足：
 
@@ -400,7 +400,7 @@ Harness 的关键是 DoD 不是“代码写完”，而是“能力闭环”。
 - 页面操作能回写真实数据
 - 至少一条页面级验收场景可走通
 
-## 7.3 Entity DoD
+## 7.3 实体完成定义
 
 任何数据实体落地，必须同时满足：
 
@@ -412,7 +412,7 @@ Harness 的关键是 DoD 不是“代码写完”，而是“能力闭环”。
 - 有状态字段或明确说明为何不需要
 - 有生命周期说明
 
-## 7.4 Async Task DoD
+## 7.4 异步任务完成定义
 
 任何异步任务能力必须满足：
 
@@ -428,7 +428,7 @@ Harness 的关键是 DoD 不是“代码写完”，而是“能力闭环”。
 - 发布任务
 - 后续导出任务
 
-## 7.5 Milestone DoD
+## 7.5 里程碑完成定义
 
 任何阶段完成都必须满足：
 
@@ -437,11 +437,11 @@ Harness 的关键是 DoD 不是“代码写完”，而是“能力闭环”。
 - 文档已同步
 - 至少一条端到端验收场景通过
 
-## 8. Required Test Matrix
+## 8. 必要测试矩阵
 
 ## 8.1 测试层级
 
-### Contract Test
+### 契约测试
 
 验证接口是否符合 `backend_spec.yaml`。
 
@@ -452,7 +452,7 @@ Harness 的关键是 DoD 不是“代码写完”，而是“能力闭环”。
 - 必填字段正确
 - 响应字段与类型正确
 
-### Service / Integration Test
+### 服务 / 集成测试
 
 验证业务逻辑和数据库行为。
 
@@ -463,7 +463,7 @@ Harness 的关键是 DoD 不是“代码写完”，而是“能力闭环”。
 - 分页和过滤
 - 权限隔离
 
-### E2E Acceptance Test
+### 端到端验收测试
 
 验证关键业务链路。
 
@@ -486,7 +486,7 @@ P0 必须至少覆盖：
 | success | 是 |
 | retry | 对异步或列表页建议必须有 |
 
-## 9. Hard Rules
+## 9. 硬约束
 
 以下规则是 Harness 的硬约束。
 
@@ -525,9 +525,9 @@ P0 必须至少覆盖：
 
 任何路径或页面如果未注册，必须在功能盘点中标识，不允许默认为计划内交付。
 
-## 10. Stage Gates
+## 10. 阶段门禁
 
-## 10.1 Gate G0: Spec Ready
+## 10.1 Gate G0：Spec Ready
 
 进入开发前必须满足：
 
@@ -536,7 +536,7 @@ P0 必须至少覆盖：
 - 接口写入 `backend_spec.yaml`
 - 数据实体已定义
 
-## 10.2 Gate G1: Backend Ready
+## 10.2 Gate G1：Backend Ready
 
 进入前端联调前必须满足：
 
@@ -545,7 +545,7 @@ P0 必须至少覆盖：
 - 集成测试通过
 - 关键错误场景已验证
 
-## 10.3 Gate G2: Frontend Ready
+## 10.3 Gate G2：Frontend Ready
 
 宣称功能完成前必须满足：
 
@@ -553,7 +553,7 @@ P0 必须至少覆盖：
 - 页面状态完整
 - mock 已移除或只保留 fixture 用途
 
-## 10.4 Gate G3: Flow Ready
+## 10.4 Gate G3：Flow Ready
 
 进入阶段验收前必须满足：
 
@@ -561,7 +561,7 @@ P0 必须至少覆盖：
 - 输入输出可追踪
 - 数据库里能查到过程数据
 
-## 10.5 Gate G4: Release Ready
+## 10.5 Gate G4：Release Ready
 
 允许进入下一里程碑前必须满足：
 
@@ -569,7 +569,7 @@ P0 必须至少覆盖：
 - 无阻塞缺陷
 - 文档已同步
 
-## 11. Traceability Requirement
+## 11. 追踪要求
 
 每个 Slice 必须能追踪到 5 类对象：
 
@@ -585,7 +585,7 @@ P0 必须至少覆盖：
 | --- | --- | --- | --- | --- | --- |
 | P0-02 | `/` | `GET /discover/articles` | `discover_articles` | contract + integration + e2e | planned |
 
-## 12. Recommended Execution Workflow
+## 12. 推荐执行流程
 
 每次开发应严格按下面流程：
 
@@ -600,7 +600,7 @@ P0 必须至少覆盖：
 9. 跑通 E2E 场景
 10. 更新功能盘点状态
 
-## 13. How To Use This Harness In This Project
+## 13. 本项目中的使用方式
 
 针对当前项目，建议立即执行以下策略：
 
@@ -634,7 +634,7 @@ P0 必须至少覆盖：
 
 否则该 Slice 不能算完成。
 
-## 14. Immediate Next Step
+## 14. 当前下一步
 
 如果要把 Harness 真正落地，而不是停留在文档层，下一步建议是：
 

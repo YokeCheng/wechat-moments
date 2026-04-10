@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 
 import type { DiscoverArticle, Pagination } from "@/lib/discover";
@@ -13,13 +13,13 @@ type DiscoverArticleTableProps = {
 };
 
 function formatCompactNumber(value: number) {
-  if (value >= 1000000) {
-    return `${(value / 1000000).toFixed(1)}M`;
+  if (value >= 100000000) {
+    return `${(value / 100000000).toFixed(1)}亿`;
   }
   if (value >= 10000) {
-    return `${(value / 1000).toFixed(0)}k`;
+    return `${(value / 10000).toFixed(1)}万`;
   }
-  return value.toLocaleString();
+  return value.toLocaleString("zh-CN");
 }
 
 function formatPublishTime(value: string) {
@@ -57,7 +57,6 @@ const DiscoverArticleTable = ({
   onPageChange,
 }: DiscoverArticleTableProps) => {
   const navigate = useNavigate();
-  const [favorites, setFavorites] = useState<string[]>([]);
 
   const totalPages = useMemo(() => {
     if (!pagination || pagination.page_size === 0) {
@@ -70,14 +69,6 @@ const DiscoverArticleTable = ({
     return buildPagination(pagination?.page ?? 1, totalPages);
   }, [pagination, totalPages]);
 
-  const toggleFavorite = (articleId: string) => {
-    setFavorites((current) =>
-      current.includes(articleId)
-        ? current.filter((item) => item !== articleId)
-        : [...current, articleId],
-    );
-  };
-
   const handleWrite = (article: DiscoverArticle) => {
     navigate(
       `/writer?title=${encodeURIComponent(article.title)}&ref=${encodeURIComponent(article.source_url)}`,
@@ -88,19 +79,19 @@ const DiscoverArticleTable = ({
     <div className="flex h-full flex-col overflow-hidden rounded-xl border border-gray-100 bg-white">
       <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-3">
         <div>
-          <p className="text-sm font-semibold text-gray-800">Discover Articles</p>
+          <p className="text-sm font-semibold text-gray-800">发现文章</p>
           <p className="text-xs text-gray-400">
-            {pagination ? `${pagination.total.toLocaleString()} records from backend` : "Backend list"}
+            {pagination ? `来自后端的 ${pagination.total.toLocaleString("zh-CN")} 条记录` : "后端真实列表"}
           </p>
         </div>
-        <div className="ml-auto text-xs text-gray-400">Favorites and export stay in later slices</div>
+        <div className="ml-auto text-xs text-gray-400">收藏和导出能力将在后续切片接入</div>
       </div>
 
       {isLoading && (
         <div className="flex flex-1 items-center justify-center">
           <div className="flex items-center gap-2 rounded-full bg-orange-50 px-4 py-2 text-sm text-orange-500">
             <i className="ri-loader-4-line animate-spin" />
-            Loading articles
+            正在加载文章
           </div>
         </div>
       )}
@@ -108,13 +99,13 @@ const DiscoverArticleTable = ({
       {!isLoading && error && (
         <div className="flex flex-1 items-center justify-center px-6">
           <div className="w-full max-w-md rounded-2xl border border-red-100 bg-red-50 p-6 text-center">
-            <p className="text-sm font-semibold text-red-600">Article request failed</p>
+            <p className="text-sm font-semibold text-red-600">文章请求失败</p>
             <p className="mt-2 text-sm text-red-500">{error}</p>
             <button
               onClick={onRetry}
               className="mt-4 cursor-pointer rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600"
             >
-              Retry
+              重试
             </button>
           </div>
         </div>
@@ -123,8 +114,8 @@ const DiscoverArticleTable = ({
       {!isLoading && !error && items.length === 0 && (
         <div className="flex flex-1 items-center justify-center px-6">
           <div className="w-full max-w-md rounded-2xl border border-gray-100 bg-gray-50 p-6 text-center">
-            <p className="text-sm font-semibold text-gray-700">No article matched the current filters</p>
-            <p className="mt-2 text-sm text-gray-500">Try a different keyword, field, time range, or view threshold.</p>
+            <p className="text-sm font-semibold text-gray-700">当前筛选下暂无文章</p>
+            <p className="mt-2 text-sm text-gray-500">请尝试调整关键词、领域、时间范围或阅读量阈值。</p>
           </div>
         </div>
       )}
@@ -135,14 +126,14 @@ const DiscoverArticleTable = ({
             <table className="w-full min-w-[980px]">
               <thead className="sticky top-0 bg-gray-50 text-xs uppercase tracking-wide text-gray-400">
                 <tr>
-                  <th className="px-5 py-3 text-left font-medium">Field</th>
-                  <th className="px-5 py-3 text-left font-medium">Published</th>
-                  <th className="px-5 py-3 text-left font-medium">Author</th>
-                  <th className="px-5 py-3 text-left font-medium">Title</th>
-                  <th className="px-5 py-3 text-right font-medium">Views</th>
-                  <th className="px-5 py-3 text-right font-medium">Likes</th>
-                  <th className="px-5 py-3 text-right font-medium">Shares</th>
-                  <th className="px-5 py-3 text-center font-medium">Actions</th>
+                  <th className="px-5 py-3 text-left font-medium">领域</th>
+                  <th className="px-5 py-3 text-left font-medium">发布时间</th>
+                  <th className="px-5 py-3 text-left font-medium">作者</th>
+                  <th className="px-5 py-3 text-left font-medium">标题</th>
+                  <th className="px-5 py-3 text-right font-medium">阅读</th>
+                  <th className="px-5 py-3 text-right font-medium">点赞</th>
+                  <th className="px-5 py-3 text-right font-medium">分享</th>
+                  <th className="px-5 py-3 text-center font-medium">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -163,12 +154,12 @@ const DiscoverArticleTable = ({
                         </a>
                         {article.is_hot && (
                           <span className="rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-medium text-red-500">
-                            HOT
+                            热
                           </span>
                         )}
                         {article.is_new && (
                           <span className="rounded bg-orange-50 px-1.5 py-0.5 text-[11px] font-medium text-orange-500">
-                            NEW
+                            新
                           </span>
                         )}
                       </div>
@@ -185,14 +176,10 @@ const DiscoverArticleTable = ({
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-center gap-2">
                         <button
-                          onClick={() => toggleFavorite(article.id)}
-                          className={`cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                            favorites.includes(article.id)
-                              ? "bg-orange-50 text-orange-500"
-                              : "bg-gray-50 text-gray-500 hover:bg-orange-50 hover:text-orange-500"
-                          }`}
+                          disabled
+                          className="cursor-not-allowed rounded-md bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-400"
                         >
-                          {favorites.includes(article.id) ? "Favorited" : "Favorite"}
+                          收藏待接入
                         </button>
                         <a
                           href={article.source_url}
@@ -200,13 +187,13 @@ const DiscoverArticleTable = ({
                           rel="noreferrer"
                           className="rounded-md bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
                         >
-                          Source
+                          原文
                         </a>
                         <button
                           onClick={() => handleWrite(article)}
                           className="cursor-pointer rounded-md bg-orange-500 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-orange-600"
                         >
-                          Write
+                          去生文
                         </button>
                       </div>
                     </td>
@@ -218,7 +205,7 @@ const DiscoverArticleTable = ({
 
           <div className="flex items-center justify-between border-t border-gray-100 px-5 py-3">
             <p className="text-xs text-gray-400">
-              Page {pagination?.page ?? 1} of {totalPages}, total {pagination?.total ?? items.length} articles
+              第 {pagination?.page ?? 1} 页，共 {totalPages} 页，累计 {pagination?.total ?? items.length} 篇文章
             </p>
             <div className="flex items-center gap-1">
               <button
@@ -226,7 +213,7 @@ const DiscoverArticleTable = ({
                 disabled={!pagination || pagination.page <= 1}
                 className="cursor-pointer rounded-md px-3 py-1.5 text-xs text-gray-500 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
               >
-                Previous
+                上一页
               </button>
               {visiblePages.map((page) => (
                 <button
@@ -246,7 +233,7 @@ const DiscoverArticleTable = ({
                 disabled={!pagination || !pagination.has_more}
                 className="cursor-pointer rounded-md px-3 py-1.5 text-xs text-gray-500 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
               >
-                Next
+                下一页
               </button>
             </div>
           </div>

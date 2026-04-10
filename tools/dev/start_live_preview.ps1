@@ -104,36 +104,36 @@ function Wait-HttpReady {
         }
     }
 
-    Write-Output "$Name not ready: $Url"
+    Write-Output "$Name 尚未就绪：$Url"
     if ($Name -eq "frontend") {
         if (Test-Path -LiteralPath $FrontendLog) {
-            Write-Output "--- frontend-live.log ---"
+            Write-Output "--- 前端实时预览日志 ---"
             Get-Content -LiteralPath $FrontendLog -Tail 80
         }
         if (Test-Path -LiteralPath $FrontendErr) {
-            Write-Output "--- frontend-live.err.log ---"
+            Write-Output "--- 前端实时预览错误日志 ---"
             Get-Content -LiteralPath $FrontendErr -Tail 80
         }
     } else {
         if (Test-Path -LiteralPath $BackendLog) {
-            Write-Output "--- backend-live.log ---"
+            Write-Output "--- 后端实时预览日志 ---"
             Get-Content -LiteralPath $BackendLog -Tail 80
         }
         if (Test-Path -LiteralPath $BackendErr) {
-            Write-Output "--- backend-live.err.log ---"
+            Write-Output "--- 后端实时预览错误日志 ---"
             Get-Content -LiteralPath $BackendErr -Tail 80
         }
     }
 
-    throw "$Name failed to start"
+    throw "$Name 启动失败"
 }
 
 Wait-HttpReady -Url $BackendHealthUrl -Name "backend"
 Wait-HttpReady -Url $FrontendUrl -Name "frontend"
 
-Write-Output "Frontend live preview: $FrontendUrl"
-Write-Output "Backend health: $BackendHealthUrl"
-Write-Output "Logs: $LogDir"
+Write-Output "前端实时预览：$FrontendUrl"
+Write-Output "后端健康检查：$BackendHealthUrl"
+Write-Output "日志目录：$LogDir"
 
 if ($OpenBrowser) {
     Start-Process $FrontendUrl
