@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.repo.discover_repo import (
     count_hot_topics,
+    get_latest_discover_articles_synced_at,
     get_latest_hot_topics_synced_at,
     query_discover_articles,
     query_hot_topics,
@@ -15,6 +16,7 @@ from app.schemas.discover import (
     DiscoverArticleItem,
     DiscoverArticleList,
     DiscoverArticleQuery,
+    DiscoverArticleRefreshResult,
     DiscoverTimeRange,
     HotTopicItem,
     HotTopicList,
@@ -93,10 +95,12 @@ def list_discover_articles(db: Session, filters: DiscoverArticleQuery) -> Discov
                 shares=item.shares,
                 source_url=_resolve_article_source_url(
                     source_url=item.source_url,
+                    collected_at=item.collected_at,
                     raw_json=item.raw_json,
                 ),
                 is_sample=_is_sample_article(
                     source_url=item.source_url,
+                    collected_at=item.collected_at,
                     raw_json=item.raw_json,
                 ),
                 is_hot=bool(item.views >= HOT_THRESHOLD),
@@ -110,6 +114,7 @@ def list_discover_articles(db: Session, filters: DiscoverArticleQuery) -> Discov
             total=total,
             has_more=page * page_size < total,
         ),
+        synced_at=get_latest_discover_articles_synced_at(db, platform=filters.platform),
     )
 
 
@@ -146,6 +151,18 @@ def build_hot_topic_refresh_result(db: Session, *, total: int) -> HotTopicRefres
     )
 
 
+def build_discover_article_refresh_result(
+    db: Session,
+    *,
+    total: int,
+    platform: str | None = None,
+) -> DiscoverArticleRefreshResult:
+    return DiscoverArticleRefreshResult(
+        total=total,
+        synced_at=get_latest_discover_articles_synced_at(db, platform=platform),
+    )
+
+
 def _seed_discover_articles(db: Session) -> None:
     now = datetime.now(UTC)
     for item in DISCOVER_ARTICLE_SEEDS:
@@ -163,6 +180,7 @@ def _seed_discover_articles(db: Session) -> None:
             source_url=item.get("source_url"),
             is_hot=bool(item["is_hot"]),
             is_new=bool(item["is_new"]),
+            collected_at=None,
             raw_json={"sample": True},
         )
 
@@ -211,14 +229,26 @@ def _extract_hot_topic_source_url(raw_json: object) -> str | None:
     return text or None
 
 
-def _resolve_article_source_url(*, source_url: str | None, raw_json: object) -> str | None:
-    if _is_sample_article(source_url=source_url, raw_json=raw_json):
+def _resolve_article_source_url(
+    *,
+    source_url: str | None,
+    collected_at: datetime | None,
+    raw_json: object,
+) -> str | None:
+    if _is_sample_article(source_url=source_url, collected_at=collected_at, raw_json=raw_json):
         return None
     text = str(source_url or "").strip()
     return text or None
 
 
-def _is_sample_article(*, source_url: str | None, raw_json: object) -> bool:
+def _is_sample_article(
+    *,
+    source_url: str | None,
+    collected_at: datetime | None,
+    raw_json: object,
+) -> bool:
+    if collected_at is not None:
+        return False
     if isinstance(raw_json, dict) and bool(raw_json.get("sample")):
         return True
     return _is_sample_source_url(source_url)

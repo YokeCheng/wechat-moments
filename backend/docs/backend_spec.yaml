@@ -115,6 +115,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorMessage'
+    post:
+      tags: [discover]
+      summary: Trigger discover article sync immediately
+      responses:
+        '200':
+          description: Discover article index refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoverArticleRefreshResult'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
 
   /api/v1/discover/hot-topics:
     get:
@@ -1095,6 +1111,12 @@ components:
           type: array
           items: { $ref: '#/components/schemas/DiscoverArticle' }
         pagination: { $ref: '#/components/schemas/Pagination' }
+        synced_at: { type: string, format: date-time, nullable: true }
+    DiscoverArticleRefreshResult:
+      type: object
+      properties:
+        total: { type: integer }
+        synced_at: { type: string, format: date-time, nullable: true }
     HotTopicList:
       type: object
       properties:

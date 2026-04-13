@@ -7,7 +7,12 @@ import type {
   DiscoverTimeRange,
   HotTopicList,
 } from "@/lib/discover";
-import { fetchDiscoverArticles, fetchHotTopics, refreshHotTopicsSnapshot } from "@/lib/discover";
+import {
+  fetchDiscoverArticles,
+  fetchHotTopics,
+  refreshDiscoverArticlesSnapshot,
+  refreshHotTopicsSnapshot,
+} from "@/lib/discover";
 import {
   ALL_FIELD_VALUE,
   DEFAULT_PAGE_SIZE,
@@ -59,7 +64,9 @@ const HomePage = () => {
   const [hotTopicPage, setHotTopicPage] = useState(1);
   const [articleReloadKey, setArticleReloadKey] = useState(0);
   const [hotTopicReloadKey, setHotTopicReloadKey] = useState(0);
+  const [articleRefreshError, setArticleRefreshError] = useState<string | null>(null);
   const [hotTopicRefreshError, setHotTopicRefreshError] = useState<string | null>(null);
+  const [isArticleRefreshing, setIsArticleRefreshing] = useState(false);
   const [isHotTopicRefreshing, setIsHotTopicRefreshing] = useState(false);
   const [articlesState, setArticlesState] = useState(defaultArticlesState);
   const [hotTopicsState, setHotTopicsState] = useState(defaultHotTopicsState);
@@ -107,6 +114,7 @@ const HomePage = () => {
         if (cancelled) {
           return;
         }
+        setArticleRefreshError(null);
         setArticlesState({
           status: "success",
           data,
@@ -247,6 +255,20 @@ const HomePage = () => {
       setHotTopicRefreshError(toErrorMessage(error, requestFallbackMessage));
     } finally {
       setIsHotTopicRefreshing(false);
+    }
+  };
+
+  const handleArticleRefresh = async () => {
+    setArticleRefreshError(null);
+    setIsArticleRefreshing(true);
+    try {
+      await refreshDiscoverArticlesSnapshot();
+      setArticlePage(1);
+      setArticleReloadKey((current) => current + 1);
+    } catch (error: unknown) {
+      setArticleRefreshError(toErrorMessage(error, requestFallbackMessage));
+    } finally {
+      setIsArticleRefreshing(false);
     }
   };
 
@@ -424,9 +446,13 @@ const HomePage = () => {
           <DiscoverArticleTable
             items={articlesState.data?.items ?? []}
             pagination={articlesState.data?.pagination ?? null}
+            syncedAt={articlesState.data?.synced_at ?? null}
             isLoading={articlesState.status === "loading"}
+            isRefreshing={isArticleRefreshing}
             error={articlesState.error}
+            refreshError={articleRefreshError}
             onRetry={() => setArticleReloadKey((current) => current + 1)}
+            onRefresh={handleArticleRefresh}
             onPageChange={setArticlePage}
           />
         )}

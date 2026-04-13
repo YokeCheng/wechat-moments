@@ -24,6 +24,10 @@ from app.services.discover_service import ensure_discover_seed_data
 from app.services.layout_service import get_upload_root
 from app.services.prompt_service import ensure_prompt_seed_data
 from app.services.writer_service import ensure_writer_seed_data
+from app.workers.discover_article_sync_worker import (
+    run_discover_article_sync_loop,
+    sync_discover_articles_once_async,
+)
 from app.workers.hot_topic_sync_worker import run_hot_topic_sync_loop, sync_hot_topics_once_async
 
 
@@ -38,7 +42,9 @@ async def lifespan(_: FastAPI):
         yield
         return
 
+    discover_article_stop_event = asyncio.Event()
     hot_topic_stop_event = asyncio.Event()
+    discover_article_sync_task: asyncio.Task[None] | None = None
     hot_topic_sync_task: asyncio.Task[None] | None = None
 
     Base.metadata.create_all(bind=engine)
@@ -54,9 +60,17 @@ async def lifespan(_: FastAPI):
     if settings.discover_hot_sync_enabled:
         await sync_hot_topics_once_async()
         hot_topic_sync_task = asyncio.create_task(run_hot_topic_sync_loop(hot_topic_stop_event))
+    if settings.discover_article_sync_enabled:
+        await sync_discover_articles_once_async()
+        discover_article_sync_task = asyncio.create_task(
+            run_discover_article_sync_loop(discover_article_stop_event)
+        )
 
     yield
 
+    if discover_article_sync_task is not None:
+        discover_article_stop_event.set()
+        await discover_article_sync_task
     if hot_topic_sync_task is not None:
         hot_topic_stop_event.set()
         await hot_topic_sync_task

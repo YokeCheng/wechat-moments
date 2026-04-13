@@ -82,6 +82,16 @@ def _migrate_discover_articles(
     dialect_name: str,
     connection: Connection,
 ) -> None:
+    if "collected_at" not in columns:
+        if dialect_name == "postgresql":
+            connection.execute(
+                text(
+                    "ALTER TABLE discover_articles ADD COLUMN IF NOT EXISTS collected_at TIMESTAMPTZ"
+                )
+            )
+        elif dialect_name == "sqlite":
+            connection.execute(text("ALTER TABLE discover_articles ADD COLUMN collected_at DATETIME"))
+
     source_url = columns.get("source_url")
     if source_url is None:
         return

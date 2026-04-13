@@ -108,9 +108,9 @@
 
 ### P0-02 Discover Read
 
-- status: `in_progress`
-- goal: 首页通过统一 discover 契约承载发现文章与热榜，其中热榜真实同步，发现文章暂以样例库承载筛选与写作跳转骨架
-- user_value: 用户能在首页使用真实热榜和稳定的发现入口，同时不会再被样例文章伪装成实时原文
+- status: `done`
+- goal: 首页通过统一 discover 契约承载发现文章与热榜，二者均已切到真实同步数据
+- user_value: 用户能在首页使用真实热榜和真实发现文章入口，同时不会再被样例文章伪装成实时原文
 - frontend_routes:
   - `/`
 - backend_endpoints:
@@ -124,7 +124,7 @@
 - acceptance:
   - 首页文章列表来自统一 discover 接口，而不是前端 mock 文件
   - 热搜榜来自真实接口
-  - 发现文章若仍为样例库，页面必须显式标识，且不得伪装成真实原文
+  - 发现文章默认展示真实同步索引；仅当某平台尚无 live 数据时才允许回退样例，并且必须显式标识
   - 首页文章与热搜列表默认每页 10 条，并支持 10 / 20 / 50 / 100 档位切换
   - 页面有 loading / empty / error / success 状态
   - `articles.ts` 不再作为主数据源
@@ -152,6 +152,29 @@
   - 首页热榜列表可区分来源平台
   - 首页可展示最近同步时间，并支持手动触发刷新
   - 热榜标题只能跳转到真实详情页；无法拿到直达链接时不得伪装成搜索页
+
+### P0-02B Discover Article Sync
+
+- status: `done`
+- goal: 让首页发现文章从样例库升级为真实文章索引同步
+- user_value: 用户打开微信文章和头条文章页签时，看到的是最近一次真实搜索抓取结果，而不是固定样例库
+- frontend_routes:
+  - `/`
+- backend_endpoints:
+  - `GET /api/v1/discover/articles`
+  - `POST /api/v1/discover/articles`
+- data_entities:
+  - `discover_articles`
+- dependencies:
+  - `P0-02`
+- acceptance:
+  - 应用启动后会执行一次发现文章同步
+  - 后台每 6 小时刷新一次微信与头条文章索引
+  - `discover_articles` 增加 `collected_at`，首页可展示最近同步时间，并支持手动刷新
+  - 头条文章优先返回真实原文或详情页直链，不得把搜索页伪装成原文
+  - 微信文章允许只返回真实搜索索引结果；若拿不到稳定原文直链，则 `source_url` 必须返回空值
+  - 当某平台已有 live 数据时，查询结果不得再混入该平台样例数据；只有该平台完全没有 live 数据时才允许回退样例
+  - 单个平台抓取失败不会阻断另一平台同步，也不会让首页 discover 接口整体不可用
 
 ### P0-03 Prompt Library CRUD
 

@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app.db.session import SessionLocal
 from app.repo.discover_repo import get_discover_article_by_id
 from app.api.v1.endpoints import discover as discover_endpoint
-from app.schemas.discover import HotTopicRefreshResult
+from app.schemas.discover import DiscoverArticleRefreshResult, HotTopicRefreshResult
 
 
 def _auth_headers(client: TestClient) -> dict[str, str]:
@@ -39,6 +39,7 @@ def test_discover_articles_support_filters_and_pagination(client: TestClient) ->
         "total": 1,
         "has_more": False,
     }
+    assert payload["synced_at"] is None
     assert len(payload["items"]) == 1
     item = payload["items"][0]
     assert item["platform"] == "weixin"
@@ -105,6 +106,39 @@ def test_hot_topics_use_latest_snapshot_and_paginate(client: TestClient) -> None
     assert payload["items"][0]["rank"] == 6
     assert payload["items"][-1]["rank"] == 10
     assert "source_url" in payload["items"][0]
+
+
+def test_discover_articles_refresh_endpoint_requires_auth(client: TestClient) -> None:
+    response = client.post("/api/v1/discover/articles")
+    assert response.status_code == 401
+    assert response.json()["detail"] == "missing bearer token"
+
+
+def test_discover_articles_refresh_endpoint_returns_sync_result(
+    client: TestClient,
+    monkeypatch: object,
+) -> None:
+    synced_at = datetime.now(UTC)
+
+    def fake_refresh_discover_articles_snapshot(_: object) -> DiscoverArticleRefreshResult:
+        return DiscoverArticleRefreshResult(total=12, synced_at=synced_at)
+
+    monkeypatch.setattr(
+        discover_endpoint,
+        "refresh_discover_articles_snapshot",
+        fake_refresh_discover_articles_snapshot,
+    )
+
+    response = client.post(
+        "/api/v1/discover/articles",
+        headers=_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "total": 12,
+        "synced_at": synced_at.isoformat().replace("+00:00", "Z"),
+    }
 
 
 def test_hot_topics_refresh_endpoint_requires_auth(client: TestClient) -> None:

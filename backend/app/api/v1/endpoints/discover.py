@@ -11,11 +11,13 @@ from app.db.models.discover import DiscoverPlatform
 from app.schemas.discover import (
     DiscoverArticleList,
     DiscoverArticleQuery,
+    DiscoverArticleRefreshResult,
     DiscoverTimeRange,
     HotTopicList,
     HotTopicRefreshResult,
 )
 from app.services.discover_service import list_discover_articles, list_hot_topics
+from app.services.discover_article_sync_service import refresh_discover_articles_snapshot
 from app.services.discover_sync_service import refresh_hot_topics_snapshot
 
 
@@ -32,7 +34,7 @@ def get_discover_articles(
     time_range: DiscoverTimeRange = Query(default=DiscoverTimeRange.ALL),
     views_min: Annotated[int | None, Query(ge=0)] = None,
     page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 10,
 ) -> DiscoverArticleList:
     return list_discover_articles(
         db,
@@ -48,12 +50,20 @@ def get_discover_articles(
     )
 
 
+@router.post("/discover/articles", response_model=DiscoverArticleRefreshResult)
+def refresh_discover_articles(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> DiscoverArticleRefreshResult:
+    return refresh_discover_articles_snapshot(db)
+
+
 @router.get("/discover/hot-topics", response_model=HotTopicList)
 def get_hot_topics(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 10,
 ) -> HotTopicList:
     return list_hot_topics(db, page=page, page_size=page_size)
 

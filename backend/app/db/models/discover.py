@@ -45,6 +45,7 @@ class DiscoverArticle(Base, TimestampMixin):
     source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_hot: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_new: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     raw_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
 
 

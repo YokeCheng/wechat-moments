@@ -13,9 +13,13 @@ import {
 type DiscoverArticleTableProps = {
   items: DiscoverArticle[];
   pagination: Pagination | null;
+  syncedAt: string | null;
   isLoading: boolean;
+  isRefreshing: boolean;
   error: string | null;
+  refreshError: string | null;
   onRetry: () => void;
+  onRefresh: () => void;
   onPageChange: (page: number) => void;
 };
 
@@ -35,9 +39,13 @@ function buildPagination(currentPage: number, totalPages: number) {
 const DiscoverArticleTable = ({
   items,
   pagination,
+  syncedAt,
   isLoading,
+  isRefreshing,
   error,
+  refreshError,
   onRetry,
+  onRefresh,
   onPageChange,
 }: DiscoverArticleTableProps) => {
   const navigate = useNavigate();
@@ -79,8 +87,32 @@ const DiscoverArticleTable = ({
               : t("home.article.header.fallback")}
           </p>
         </div>
-        <div className="ml-auto text-xs text-gray-400">{t("home.article.header.pending")}</div>
+        <div className="ml-auto flex items-center gap-3">
+          <div className="text-right">
+            <p className="text-xs font-medium text-gray-500">
+              {syncedAt
+                ? t("home.article.header.syncedAt", {
+                    value: formatPublishTime(syncedAt, language),
+                  })
+                : t("home.article.header.unsynced")}
+            </p>
+            <p className="text-[11px] text-gray-400">{t("home.article.header.pending")}</p>
+          </div>
+          <button
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className="cursor-pointer rounded-lg bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:text-gray-300"
+          >
+            {isRefreshing ? t("home.article.actions.refreshing") : t("home.article.actions.refresh")}
+          </button>
+        </div>
       </div>
+
+      {!isLoading && !error && refreshError && (
+        <div className="border-b border-red-100 bg-red-50 px-5 py-2 text-xs text-red-600">
+          {t("home.article.refreshFailed", { message: refreshError })}
+        </div>
+      )}
 
       {!isLoading && !error && showSampleNotice && (
         <div className="border-b border-amber-100 bg-amber-50 px-5 py-3 text-xs text-amber-700">

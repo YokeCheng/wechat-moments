@@ -3,15 +3,24 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.db.models.discover import DiscoverArticle, HotTopic
+from app.db.models.discover import DiscoverArticle, DiscoverPlatform, HotTopic
 from app.schemas.discover import DiscoverArticleQuery
 
 
 def count_discover_articles(db: Session) -> int:
     statement = select(func.count()).select_from(DiscoverArticle)
+    return int(db.scalar(statement) or 0)
+
+
+def count_live_discover_articles(db: Session, *, platform: str | None = None) -> int:
+    statement = select(func.count()).select_from(DiscoverArticle).where(
+        DiscoverArticle.collected_at.is_not(None)
+    )
+    if platform is not None:
+        statement = statement.where(DiscoverArticle.platform == platform)
     return int(db.scalar(statement) or 0)
 
 
@@ -104,17 +113,32 @@ def get_latest_hot_topics_synced_at(db: Session) -> datetime | None:
     return value if isinstance(value, datetime) else None
 
 
+def get_latest_discover_articles_synced_at(
+    db: Session,
+    *,
+    platform: str | None = None,
+) -> datetime | None:
+    statement = select(func.max(DiscoverArticle.collected_at))
+    if platform is not None:
+        statement = statement.where(DiscoverArticle.platform == platform)
+    value = db.scalar(statement)
+    return value if isinstance(value, datetime) else None
+
+
 def query_discover_articles(
     db: Session,
     filters: DiscoverArticleQuery,
     *,
     published_after: datetime | None,
 ) -> tuple[list[DiscoverArticle], int]:
+    live_platforms = _get_live_discover_platforms(db, platform=filters.platform)
     statement = select(DiscoverArticle)
     count_statement = select(func.count()).select_from(DiscoverArticle)
 
     statement = _apply_article_filters(statement, filters, published_after)
     count_statement = _apply_article_filters(count_statement, filters, published_after)
+    statement = _apply_live_visibility(statement, filters.platform, live_platforms)
+    count_statement = _apply_live_visibility(count_statement, filters.platform, live_platforms)
 
     total = int(db.scalar(count_statement) or 0)
     paged_statement = (
@@ -174,3 +198,40 @@ def _apply_article_filters(
     if filters.views_min is not None:
         statement = statement.where(DiscoverArticle.views >= filters.views_min)
     return statement
+
+
+def _get_live_discover_platforms(db: Session, *, platform: str | None = None) -> set[str]:
+    statement = select(DiscoverArticle.platform).where(DiscoverArticle.collected_at.is_not(None)).distinct()
+    if platform is not None:
+        statement = statement.where(DiscoverArticle.platform == platform)
+    return {str(value) for value in db.scalars(statement).all() if value}
+
+
+def _apply_live_visibility(
+    statement: Select[Any],
+    platform: str | None,
+    live_platforms: set[str],
+) -> Select[Any]:
+    if platform is not None:
+        if platform in live_platforms:
+            return statement.where(DiscoverArticle.collected_at.is_not(None))
+        return statement.where(DiscoverArticle.collected_at.is_(None))
+
+    if not live_platforms:
+        return statement
+
+    all_platforms = {item.value for item in DiscoverPlatform}
+    fallback_platforms = sorted(all_platforms - live_platforms)
+    live_condition = and_(
+        DiscoverArticle.platform.in_(sorted(live_platforms)),
+        DiscoverArticle.collected_at.is_not(None),
+    )
+
+    if not fallback_platforms:
+        return statement.where(live_condition)
+
+    fallback_condition = and_(
+        DiscoverArticle.platform.in_(fallback_platforms),
+        DiscoverArticle.collected_at.is_(None),
+    )
+    return statement.where(or_(live_condition, fallback_condition))

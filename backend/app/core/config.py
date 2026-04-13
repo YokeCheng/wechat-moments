@@ -31,6 +31,10 @@ class Settings(BaseSettings):
         default="http://localhost:3000,http://127.0.0.1:3000,http://172.16.10.191:3000"
     )
     seed_demo_username: str = "creator"
+    discover_article_sync_enabled: bool = True
+    discover_article_sync_interval_seconds: int = 21600
+    discover_article_sync_timeout_seconds: int = 12
+    discover_article_sync_limit_per_field: int = 6
     discover_hot_sync_enabled: bool = True
     discover_hot_sync_interval_seconds: int = 21600
     discover_hot_sync_timeout_seconds: int = 15

@@ -311,30 +311,39 @@
 - 热榜项现在带有来源平台标识；当单个平台抓取失败时，会优先回退到上一份快照，必要时再回退到 seed，不阻断首页展示。
 - 首页热榜补充了最近同步时间和手动刷新入口，便于直接判断当前快照是否滞后。
 - 首页热榜标题现在只在拿到真实详情页直链时才允许跳转，不再把搜索页伪装成原文。
-- 首页发现文章当前仍由后端样例库承载，尚未接入真实文章采集；页面必须把该状态显式暴露给用户。
-- 发现文章列表中的占位链接不再回退到平台搜索页冒充原文；样例文章会显示为“样例数据/无原文”。
+- 首页发现文章已切到真实搜索索引同步；仅在某平台尚无 live 数据时才允许回退样例，并且必须显式标识。
+- 发现文章列表不再把平台搜索页伪装成原文；微信无稳定原文时显示“无原文”，头条优先返回真实详情页链接。
 - 顶部导航将收敛到当前真正可交付的主链路页面，未完成的 P1/P2 原型不再作为默认主导航入口暴露。
 
-## Known Integration Risks
+## 已知集成风险
 
 - `/editor` 页面与部分快捷工具路径未注册
-- 发现文章真实采集切片尚未完成，当前首页文章区仍是样例库而非实时采集流
 - `LayoutPage` 已接通真实草稿持久化，但恢复草稿时仍缺少封面资源直读能力
 - 多个源码文件存在编码异常，联调前建议统一 UTF-8
-## 2026-04-09 P0-02 Update
+- 微信搜索结果受反爬限制，首页微信文章区目前只能稳定展示真实索引结果，无法承诺稳定原文直链
+- 头条文章字段相关性依赖其公开搜索结果质量，个别分类可能出现噪声内容，但数据已来自真实搜索而非本地 mock
+## 2026-04-09 P0-02 更新
 
-- Route `/` now reads real backend data from `GET /api/v1/discover/articles` and `GET /api/v1/discover/hot-topics`.
-- The primary homepage path no longer imports `src/mocks/articles.ts`.
-- Homepage states now explicitly cover loading, empty, error, and success.
-- Favorite and export remain follow-up work and are not counted as part of `P0-02`.
-- Removed the unregistered `src/pages/editor/page.tsx` prototype, unused home-only experiment components, and the orphaned `src/mocks/editor.ts` / `src/mocks/dashboard.ts` files.
+- 路由 `/` 已接入 `GET /api/v1/discover/articles` 与 `GET /api/v1/discover/hot-topics`。
+- 首页主路径不再从 `src/mocks/articles.ts` 读取主数据。
+- 首页已显式覆盖 `loading / empty / error / success` 四态。
+- 收藏与导出仍属于后续切片，不计入当前 `P0-02` 完成范围。
+- 已移除未注册的 `src/pages/editor/page.tsx` 原型、首页专用实验组件，以及孤立的 `src/mocks/editor.ts` / `src/mocks/dashboard.ts`。
 
-## 2026-04-10 Discover UI Update
+## 2026-04-10 Discover UI 更新
 
-- TopBar now exposes a `中文 / EN` language toggle and the frontend defaults to Chinese.
-- The current bilingual scope covers global navigation and the homepage discover surface.
-- Homepage article list and hot topic list now default to `10` items per page and allow `10 / 20 / 50 / 100`.
-- Page size switching keeps the existing discover contract and continues to pass `page_size` to the backend.
+- 顶部导航已提供 `中文 / EN` 语言切换，前端默认中文。
+- 当前双语覆盖范围包括全局导航和首页发现页主界面。
+- 首页文章列表与热搜列表默认每页 `10` 条，并支持 `10 / 20 / 50 / 100` 档位。
+- 页大小切换继续沿用 discover 契约，并向后端传递 `page_size`。
+
+## 2026-04-13 Discover Article Sync 更新
+
+- 首页发现文章已完成 `P0-02B Discover Article Sync` 最小闭环：应用启动自动同步、后台每 6 小时定时同步、首页支持手动刷新。
+- `GET /api/v1/discover/articles` 已返回 `synced_at`，`POST /api/v1/discover/articles` 可立即触发一次真实同步。
+- `discover_articles.collected_at` 已落库，用作 live 数据时间锚点；首页文章区已展示最近同步时间。
+- 微信文章现在来自真实搜索索引，若拿不到稳定原文直链则返回 `source_url = null`，不再伪装搜索页。
+- 头条文章现在来自真实搜索结果，优先返回可用详情页链接；当平台已有 live 数据时，首页不再混入该平台样例数据。
 
 ## 2026-04-10 P0-03 提示词库更新
 

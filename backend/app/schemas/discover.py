@@ -43,6 +43,12 @@ class DiscoverArticleItem(BaseModel):
 class DiscoverArticleList(BaseModel):
     items: list[DiscoverArticleItem]
     pagination: Pagination
+    synced_at: datetime | None = None
+
+
+class DiscoverArticleRefreshResult(BaseModel):
+    total: int
+    synced_at: datetime | None = None
 
 
 class HotTopicItem(BaseModel):
@@ -76,4 +82,4 @@ class DiscoverArticleQuery(BaseModel):
     time_range: DiscoverTimeRange = DiscoverTimeRange.ALL
     views_min: int | None = None
     page: int = 1
-    page_size: int = 20
+    page_size: int = 10

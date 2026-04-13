@@ -280,8 +280,28 @@ backend/
   - `likes`
   - `shares`
   - `source_url`
+  - `is_sample`
   - `is_hot`
   - `is_new`
+  - `synced_at`
+
+约束说明：
+
+- 返回的 `synced_at` 表示当前 discover live 数据最近一次采集时间，用于首页展示 freshness。
+- 当某平台已经存在 live 文章时，该平台查询结果不得混入样例数据。
+- 微信来源若仅能获得真实搜索索引，允许返回 `source_url = null`，但不得伪装成搜索页或原文页。
+
+### POST `/api/v1/discover/articles`
+
+- 说明：手动触发发现文章同步
+- 鉴权：是
+- 返回字段：
+  - `total`
+  - `synced_at`
+- 行为：
+  - 分别抓取微信文章索引与头条文章索引
+  - 对已存在文章做幂等更新，对新文章做增量入库
+  - 单平台失败时保留另一平台成功结果，不阻断首页 discover 读取
 
 ### GET `/api/v1/discover/hot-topics`
 
@@ -822,6 +842,7 @@ backend/
 | source_url | varchar(500) | 原文链接 |
 | is_hot | boolean | 是否热 |
 | is_new | boolean | 是否新 |
+| collected_at | timestamptz null | 最近一次采集时间 |
 | raw_json | jsonb | 原始采集数据 |
 | created_at | timestamptz | 入库时间 |
 | updated_at | timestamptz | 更新时间 |
@@ -835,9 +856,12 @@ backend/
 
 说明：
 
-- 当前 `discover_articles` 仍作为首页发现文章样例库，用于打通筛选、分页、写作跳转和后续真实采集切片的统一契约。
-- 当记录的 `source_url` 仍为内部占位地址时，API 层必须把该记录标记为 `is_sample=true`，并将响应里的 `source_url` 置空；不得回退为搜索页或伪装成原文页。
-- 首页必须显式区分“样例文章”和“真实热榜快照”，避免把样例内容误判为实时采集结果。
+- `discover_articles` 同时承载样例库与真实采集索引，但二者必须通过 `collected_at` 与 `raw_json.sample` 明确区分。
+- `collected_at is not null` 代表 live 数据；该字段也作为首页“最近同步时间”的时间锚点。
+- 当某平台已经存在 live 数据时，查询结果必须优先返回 live 数据，不得再混入该平台的样例行。
+- 当记录的 `source_url` 仍为内部占位地址、搜索页，或上游未提供稳定原文直链时，API 层必须把该记录标记为 `is_sample=true` 或将 `source_url` 置空；不得伪装成原文页。
+- 微信来源当前允许只返回真实搜索索引结果：可提供标题、作者、发布时间，但可能没有稳定原文链接。
+- 头条来源应优先保存真实 `article_url/share_url/source_url` 中的可用详情直链，并保留原始抓取字段用于审计。
 
 ### 7. `hot_topics`
 

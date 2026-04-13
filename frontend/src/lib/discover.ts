@@ -42,6 +42,12 @@ export type HotTopic = {
 export type DiscoverArticleList = {
   items: DiscoverArticle[];
   pagination: Pagination;
+  synced_at?: string | null;
+};
+
+export type DiscoverArticleRefreshResult = {
+  total: number;
+  synced_at?: string | null;
 };
 
 export type HotTopicList = {
@@ -90,6 +96,12 @@ export async function fetchDiscoverArticles(query: DiscoverArticleQuery) {
     page_size: query.page_size,
   });
   return requestAuthedJson<DiscoverArticleList>(`/api/v1/discover/articles${queryString}`);
+}
+
+export async function refreshDiscoverArticlesSnapshot() {
+  return requestAuthedJson<DiscoverArticleRefreshResult>("/api/v1/discover/articles", {
+    method: "POST",
+  });
 }
 
 export async function fetchHotTopics(params: { page?: number; page_size?: number }) {
