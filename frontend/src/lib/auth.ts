@@ -54,10 +54,11 @@ export function clearDevToken() {
 }
 
 export async function requestJson<T>(path: string, init: RequestInit = {}) {
+  const isFormDataBody = typeof FormData !== "undefined" && init.body instanceof FormData;
   const response = await fetch(`${getApiBaseUrl()}${path}`, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormDataBody ? {} : { "Content-Type": "application/json" }),
       ...(init.headers ?? {}),
     },
   });

@@ -34,7 +34,8 @@ class DiscoverArticleItem(BaseModel):
     views: int
     likes: int
     shares: int
-    source_url: str
+    source_url: str | None = None
+    is_sample: bool = False
     is_hot: bool
     is_new: bool
 
@@ -49,15 +50,23 @@ class HotTopicItem(BaseModel):
 
     id: str
     rank: int
+    platform: str
     title: str
     heat: int
     trend: str
     field: str
+    source_url: str | None = None
 
 
 class HotTopicList(BaseModel):
     items: list[HotTopicItem]
     pagination: Pagination
+    synced_at: datetime | None = None
+
+
+class HotTopicRefreshResult(BaseModel):
+    total: int
+    synced_at: datetime | None = None
 
 
 class DiscoverArticleQuery(BaseModel):

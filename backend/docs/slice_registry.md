@@ -108,9 +108,9 @@
 
 ### P0-02 Discover Read
 
-  - status: `done`
-- goal: 首页使用真实爆款文章与热搜数据
-- user_value: 用户能从首页看到真实列表，而不是 mock
+- status: `in_progress`
+- goal: 首页通过统一 discover 契约承载发现文章与热榜，其中热榜真实同步，发现文章暂以样例库承载筛选与写作跳转骨架
+- user_value: 用户能在首页使用真实热榜和稳定的发现入口，同时不会再被样例文章伪装成实时原文
 - frontend_routes:
   - `/`
 - backend_endpoints:
@@ -122,15 +122,40 @@
 - dependencies:
   - `P0-01`
 - acceptance:
-  - 首页文章列表来自真实接口
+  - 首页文章列表来自统一 discover 接口，而不是前端 mock 文件
   - 热搜榜来自真实接口
+  - 发现文章若仍为样例库，页面必须显式标识，且不得伪装成真实原文
   - 首页文章与热搜列表默认每页 10 条，并支持 10 / 20 / 50 / 100 档位切换
   - 页面有 loading / empty / error / success 状态
   - `articles.ts` 不再作为主数据源
 
+### P0-02A Hot Topic Sync
+
+- status: `done`
+- goal: 让热榜数据从静态 seed 升级为真实多源定时同步
+- user_value: 用户打开首页热榜时，能看到来自微博、百度、头条的最新真实词条，而不是固定 mock
+- frontend_routes:
+  - `/`
+- backend_endpoints:
+  - `GET /api/v1/discover/hot-topics`
+- data_entities:
+  - `hot_topics`
+- dependencies:
+  - `P0-02`
+- acceptance:
+  - 应用启动后会执行一次热榜同步
+  - 后台每 6 小时刷新一次热榜快照
+  - 热榜快照按批次增量入库，不覆盖历史批次
+  - 同步源至少覆盖微博、百度、头条三个来源
+  - 热度低于 `10000` 的词条不计入热榜
+  - 单个来源抓取失败不会导致首页热榜接口不可用
+  - 首页热榜列表可区分来源平台
+  - 首页可展示最近同步时间，并支持手动触发刷新
+  - 热榜标题只能跳转到真实详情页；无法拿到直达链接时不得伪装成搜索页
+
 ### P0-03 Prompt Library CRUD
 
-- status: `planned`
+- status: `done`
 - goal: 提示词库从 mock 变为真实管理系统
 - user_value: 用户可以创建、筛选、查看、编辑、删除提示词及分类
 - frontend_routes:
@@ -156,9 +181,13 @@
   - 提示词状态可启停
   - `prompts.ts` 不再作为主数据源
 
+  - 页面覆盖 loading / empty / error / success 四态
+  - `/prompts` 默认每页 10 条，并支持 10 / 20 / 50 / 100 档位
+  - `/prompts` 页面主要文案已接入中英双语资源
+
 ### P0-04 Writer Workspace
 
-- status: `planned`
+- status: `done`
 - goal: 智能生文页具备真实分组和文章管理能力
 - user_value: 用户可以管理文章分组、文章草稿和元信息
 - frontend_routes:
@@ -186,7 +215,7 @@
 
 ### P0-05 Generate Task
 
-- status: `planned`
+- status: `done`
 - goal: 让“开始生成”成为真实异步任务
 - user_value: 用户能创建生成任务并看到真实状态
 - frontend_routes:
@@ -207,7 +236,7 @@
 
 ### P0-06 Layout Workspace
 
-- status: `planned`
+- status: `in_progress`
 - goal: 一键排版页具备真实保存和恢复能力
 - user_value: 用户能保存排版稿并继续编辑
 - frontend_routes:
@@ -230,7 +259,7 @@
 
 ### P0-07 Asset Upload
 
-- status: `planned`
+- status: `in_progress`
 - goal: 封面和正文资源可真实上传
 - user_value: 用户上传的封面图不再只存在浏览器内存
 - frontend_routes:

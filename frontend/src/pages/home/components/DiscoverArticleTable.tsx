@@ -56,10 +56,14 @@ const DiscoverArticleTable = ({
     return buildPagination(pagination?.page ?? 1, totalPages);
   }, [pagination, totalPages]);
 
+  const showSampleNotice = useMemo(() => items.some((article) => article.is_sample), [items]);
+
   const handleWrite = (article: DiscoverArticle) => {
-    navigate(
-      `/writer?title=${encodeURIComponent(article.title)}&ref=${encodeURIComponent(article.source_url)}`,
-    );
+    const searchParams = new URLSearchParams({ title: article.title });
+    if (article.source_url) {
+      searchParams.set("ref", article.source_url);
+    }
+    navigate(`/writer?${searchParams.toString()}`);
   };
 
   return (
@@ -77,6 +81,12 @@ const DiscoverArticleTable = ({
         </div>
         <div className="ml-auto text-xs text-gray-400">{t("home.article.header.pending")}</div>
       </div>
+
+      {!isLoading && !error && showSampleNotice && (
+        <div className="border-b border-amber-100 bg-amber-50 px-5 py-3 text-xs text-amber-700">
+          {t("home.article.notice.sampleMode")}
+        </div>
+      )}
 
       {isLoading && (
         <div className="flex flex-1 items-center justify-center">
@@ -135,14 +145,18 @@ const DiscoverArticleTable = ({
                     <td className="px-5 py-4 text-sm font-medium text-gray-700">{article.author}</td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
-                        <a
-                          href={article.source_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="line-clamp-2 text-sm text-gray-800 transition-colors hover:text-orange-500"
-                        >
-                          {article.title}
-                        </a>
+                        {article.source_url ? (
+                          <a
+                            href={article.source_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="line-clamp-2 text-sm text-gray-800 transition-colors hover:text-orange-500"
+                          >
+                            {article.title}
+                          </a>
+                        ) : (
+                          <p className="line-clamp-2 text-sm text-gray-800">{article.title}</p>
+                        )}
                         {article.is_hot && (
                           <span className="rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-medium text-red-500">
                             {t("home.article.badges.hot")}
@@ -151,6 +165,11 @@ const DiscoverArticleTable = ({
                         {article.is_new && (
                           <span className="rounded bg-orange-50 px-1.5 py-0.5 text-[11px] font-medium text-orange-500">
                             {t("home.article.badges.new")}
+                          </span>
+                        )}
+                        {article.is_sample && (
+                          <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
+                            {t("home.article.badges.sample")}
                           </span>
                         )}
                       </div>
@@ -172,14 +191,20 @@ const DiscoverArticleTable = ({
                         >
                           {t("home.article.actions.favoritePending")}
                         </button>
-                        <a
-                          href={article.source_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="rounded-md bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
-                        >
-                          {t("home.article.actions.original")}
-                        </a>
+                        {article.source_url ? (
+                          <a
+                            href={article.source_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-md bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+                          >
+                            {t("home.article.actions.original")}
+                          </a>
+                        ) : (
+                          <span className="rounded-md bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-400">
+                            {t("home.article.actions.unavailable")}
+                          </span>
+                        )}
                         <button
                           onClick={() => handleWrite(article)}
                           className="cursor-pointer rounded-md bg-orange-500 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-orange-600"

@@ -1,5 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { getApiBaseUrl } from '@/lib/auth';
+import {
+  createLayoutDraft,
+  fetchLayoutDraft,
+  fetchLayoutDrafts,
+  renderLayout,
+  updateLayoutDraft,
+  uploadAsset,
+  type LayoutDraft,
+} from '@/lib/layout';
+import { fetchWriterArticle } from '@/lib/writer';
 import MarkdownToolbar, { useMarkdownKeyDown } from '@/pages/layout/components/MarkdownToolbar';
 
 const themes = [
@@ -37,6 +48,15 @@ const defaultContent = `# 春天最该吃的10道时令菜
 ## 3. 荠菜饺子
 
 荠菜是野菜中的佼佼者，包成饺子清香可口，是很多人童年的味道。`;
+
+const formatDraftTime = (value: string) =>
+  new Date(value).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 
 // ── Device presets (Chrome DevTools style) ──
 interface DevicePreset {
@@ -429,8 +449,11 @@ const EditorTextarea = ({ textareaRef, value, onChange }: EditorTextareaProps) =
 // ── Main Page ──
 const LayoutPage = () => {
   const [searchParams] = useSearchParams();
+  const articleIdFromQuery = searchParams.get('articleId');
+  const draftIdFromQuery = searchParams.get('draftId');
   const [articleTitle, setArticleTitle] = useState('春天最该吃的10道时令菜');
   const [coverImage, setCoverImage] = useState<string | null>(null);
+  const [coverAssetId, setCoverAssetId] = useState<string | null>(null);
   const [content, setContent] = useState(defaultContent);
   const [activeThemeId, setActiveThemeId] = useState('default');
   const [themeColor, setThemeColor] = useState('#FF6600');
@@ -449,6 +472,12 @@ const LayoutPage = () => {
   const [showPreview, setShowPreview] = useState(true);
   const [previewScale, setPreviewScale] = useState(1);
   const [fullscreen, setFullscreen] = useState(false);
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [linkedArticleId, setLinkedArticleId] = useState<string | null>(articleIdFromQuery);
+  const [busyMessage, setBusyMessage] = useState('');
+  const [drafts, setDrafts] = useState<LayoutDraft[]>([]);
+  const [loadingDrafts, setLoadingDrafts] = useState(true);
+  const [draftLoadError, setDraftLoadError] = useState('');
 
   // Device state
   const [activePreset, setActivePreset] = useState<DevicePreset>(
@@ -508,6 +537,72 @@ const LayoutPage = () => {
     }
   }, [searchParams]);
 
+  const hydrateDraft = useCallback((draft: LayoutDraft) => {
+    setDraftId(draft.id);
+    setLinkedArticleId(draft.article_id);
+    setArticleTitle(draft.title);
+    setContent(draft.content_md);
+    setCoverAssetId(draft.cover_asset_id);
+    setCoverImage(null);
+    setActiveThemeId(draft.theme_id);
+    setThemeColor(draft.theme_color);
+    setFontFamily(draft.font_family);
+    setFontSize(draft.font_size);
+    setLineHeight(draft.line_height);
+    setTitleAlign(draft.title_align);
+    setParaIndent(draft.para_indent);
+    setRoundImage(draft.round_image);
+  }, []);
+
+  const loadDraftItems = useCallback(async () => {
+    try {
+      setLoadingDrafts(true);
+      setDraftLoadError('');
+      const response = await fetchLayoutDrafts({ page: 1, page_size: 12 });
+      setDrafts(response.items);
+    } catch {
+      setDraftLoadError('草稿列表读取失败');
+    } finally {
+      setLoadingDrafts(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadDraftItems();
+  }, [loadDraftItems]);
+
+  useEffect(() => {
+    if (!draftIdFromQuery) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const draft = await fetchLayoutDraft(draftIdFromQuery);
+        hydrateDraft(draft);
+      } catch {
+        // Keep local editor state if the remote draft is unavailable.
+      }
+    })();
+  }, [draftIdFromQuery, hydrateDraft]);
+
+  useEffect(() => {
+    if (!articleIdFromQuery || draftIdFromQuery) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const article = await fetchWriterArticle(articleIdFromQuery);
+        setLinkedArticleId(article.id);
+        setArticleTitle(article.title);
+        setContent(article.content_md || defaultContent);
+      } catch {
+        // Keep local editor state if the remote article is unavailable.
+      }
+    })();
+  }, [articleIdFromQuery, draftIdFromQuery]);
+
   const activeTheme = themes.find((t) => t.id === activeThemeId) || themes[0];
   const activeFontFamily = fontFamilies.find((f) => f.id === fontFamily)?.value || fontFamilies[0].value;
   const accentColor = themeColor || activeTheme.accentColor;
@@ -528,28 +623,87 @@ const LayoutPage = () => {
     return html;
   };
 
-  const handleCopy = () => {
-    const html = renderPreview(content);
-    navigator.clipboard.writeText(html).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const buildLayoutPayload = () => ({
+    title: articleTitle,
+    article_id: linkedArticleId,
+    cover_asset_id: coverAssetId,
+    content_md: content,
+    theme_id: activeThemeId,
+    theme_color: themeColor,
+    font_family: fontFamily as 'sans' | 'serif' | 'round',
+    font_size: fontSize,
+    line_height: lineHeight,
+    title_align: titleAlign,
+    para_indent: paraIndent,
+    round_image: roundImage,
+  });
+
+  const handleCopy = async () => {
+    try {
+      setBusyMessage('正在生成 HTML...');
+      const response = await renderLayout(buildLayoutPayload());
+      await navigator.clipboard.writeText(response.html);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } finally {
+      setBusyMessage('');
+    }
   };
 
-  const handleSave = () => {
-    setSaved(true);
-    setShowSaveToast(true);
-    setTimeout(() => { setSaved(false); setShowSaveToast(false); }, 2500);
+  const handleSave = async () => {
+    try {
+      setBusyMessage('正在保存草稿...');
+      const payload = buildLayoutPayload();
+      const draft = draftId ? await updateLayoutDraft(draftId, payload) : await createLayoutDraft(payload);
+      setDraftId(draft.id);
+      setLinkedArticleId(draft.article_id);
+      setSaved(true);
+      void loadDraftItems();
+      setShowSaveToast(true);
+      setTimeout(() => { setSaved(false); setShowSaveToast(false); }, 2500);
+    } finally {
+      setBusyMessage('');
+    }
   };
 
-  const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => { setCoverImage(ev.target?.result as string); };
-    reader.readAsDataURL(file);
+    try {
+      setBusyMessage('正在上传封面...');
+      const asset = await uploadAsset(file, 'cover_image');
+      setCoverAssetId(asset.id);
+      setCoverImage(`${getApiBaseUrl()}${asset.public_url}`);
+    } finally {
+      e.target.value = '';
+      setBusyMessage('');
+    }
   };
 
   const wordCount = content.replace(/\s/g, '').length;
+  const isBusy = busyMessage.length > 0;
+
+  const clearCover = () => {
+    setCoverImage(null);
+    setCoverAssetId(null);
+  };
+
+  const handleDraftSelect = async (nextDraftId: string) => {
+    if (nextDraftId === draftId) {
+      return;
+    }
+    if (!window.confirm('切换草稿会覆盖当前编辑内容，是否继续？')) {
+      return;
+    }
+
+    try {
+      setBusyMessage('正在载入草稿...');
+      const draft = await fetchLayoutDraft(nextDraftId);
+      hydrateDraft(draft);
+    } finally {
+      setBusyMessage('');
+    }
+  };
 
   const previewProps = {
     preset: activePreset,
@@ -570,6 +724,14 @@ const LayoutPage = () => {
 
   return (
     <div className="flex-1 flex bg-[#F7F8FA] overflow-hidden" style={{ height: 'calc(100vh - 52px)' }}>
+      {busyMessage && (
+        <div className="fixed top-16 left-1/2 z-40 -translate-x-1/2 rounded-full border border-orange-200 bg-white/95 px-4 py-2 shadow-sm backdrop-blur">
+          <div className="flex items-center gap-2 text-sm text-gray-700">
+            <i className="ri-loader-4-line animate-spin text-orange-500" />
+            <span>{busyMessage}</span>
+          </div>
+        </div>
+      )}
 
       {/* ── Left: Settings Panel (collapsed) ── */}
       {!showSettings && (
@@ -631,7 +793,7 @@ const LayoutPage = () => {
                     <p className="text-white text-xs font-medium">更换封面</p>
                   </div>
                   <button
-                    onClick={(e) => { e.stopPropagation(); setCoverImage(null); }}
+                    onClick={(e) => { e.stopPropagation(); clearCover(); }}
                     className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors cursor-pointer"
                   >
                     <i className="ri-close-line text-xs" />
@@ -651,6 +813,51 @@ const LayoutPage = () => {
                     <p className="text-xs text-gray-300 mt-0.5">建议尺寸 900×600</p>
                   </div>
                 </button>
+              )}
+            </div>
+
+            <div className="border-t border-gray-100" />
+
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <label className="text-xs font-semibold text-gray-600">最近草稿</label>
+                <span className="text-[11px] text-gray-400">最多展示 12 条</span>
+              </div>
+
+              {loadingDrafts ? (
+                <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-400">正在读取草稿...</p>
+              ) : draftLoadError ? (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-500">{draftLoadError}</p>
+              ) : drafts.length === 0 ? (
+                <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-400">还没有已保存草稿</p>
+              ) : (
+                <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
+                  {drafts.map((draft) => (
+                    <button
+                      key={draft.id}
+                      onClick={() => void handleDraftSelect(draft.id)}
+                      className={`w-full rounded-xl border px-3 py-2 text-left transition-colors ${
+                        draft.id === draftId
+                          ? 'border-orange-300 bg-orange-50'
+                          : 'border-gray-100 bg-gray-50 hover:border-orange-200 hover:bg-orange-50/60'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-medium text-gray-700">{draft.title || '未命名草稿'}</p>
+                          <p className="mt-1 text-[11px] text-gray-400">
+                            {formatDraftTime(draft.updated_at)}
+                          </p>
+                        </div>
+                        {draft.id === draftId && (
+                          <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-medium text-orange-600">
+                            当前
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
 
@@ -767,17 +974,19 @@ const LayoutPage = () => {
           <div className="px-5 py-4 border-t border-gray-100 space-y-2 flex-shrink-0">
             <button
               onClick={handleSave}
-              className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${saved ? 'bg-green-500 text-white' : 'bg-orange-500 hover:bg-orange-600 text-white'}`}
+              disabled={isBusy}
+              className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${isBusy ? 'cursor-not-allowed bg-gray-200 text-gray-500' : saved ? 'cursor-pointer bg-green-500 text-white' : 'cursor-pointer bg-orange-500 hover:bg-orange-600 text-white'}`}
             >
-              <i className={`${saved ? 'ri-check-line' : 'ri-save-line'} text-sm`} />
-              {saved ? '已保存' : '保存'}
+              <i className={`${isBusy ? 'ri-loader-4-line animate-spin' : saved ? 'ri-check-line' : 'ri-save-line'} text-sm`} />
+              {isBusy ? busyMessage : saved ? '已保存' : '保存'}
             </button>
             <button
               onClick={handleCopy}
-              className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${copied ? 'bg-green-500 text-white' : 'border border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+              disabled={isBusy}
+              className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${isBusy ? 'cursor-not-allowed border border-gray-200 bg-gray-100 text-gray-400' : copied ? 'cursor-pointer bg-green-500 text-white' : 'cursor-pointer border border-gray-200 text-gray-700 hover:bg-gray-50'}`}
             >
-              <i className={`${copied ? 'ri-check-line' : 'ri-file-copy-line'} text-sm`} />
-              {copied ? '已复制' : '复制排版内容'}
+              <i className={`${isBusy ? 'ri-loader-4-line animate-spin' : copied ? 'ri-check-line' : 'ri-file-copy-line'} text-sm`} />
+              {isBusy ? '请稍候' : copied ? '已复制' : '复制排版内容'}
             </button>
           </div>
         </div>
@@ -835,7 +1044,7 @@ const LayoutPage = () => {
                   <p className="text-xs text-gray-400 mt-0.5 truncate">点击左侧封面区域可更换</p>
                 </div>
                 <button
-                  onClick={() => setCoverImage(null)}
+                  onClick={clearCover}
                   className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer flex-shrink-0"
                 >
                   <i className="ri-delete-bin-line text-sm" />

@@ -36,12 +36,13 @@
 | 切片 | 路由 | 核心接口 | 核心实体 | 必要验证 | 当前目标 Gate | 关键 mock / 漂移 | 当前状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `P0-01 Auth And Current User` | 全局导航 | `POST /api/v1/auth/dev-login`, `GET /api/v1/me` | `users`, `subscriptions`, `usage_counters` | 契约验证 + 认证集成 | `G2 完成，下一步 G3` | 全局导航中的当前用户上下文已改为后端真实来源 | `done` |
-| `P0-02 Discover Read` | `/` | `GET /api/v1/discover/articles`, `GET /api/v1/discover/hot-topics` | `discover_articles`, `hot_topics` | 契约验证 + 筛选集成 + 首页冒烟 | `G3 完成，下一步 P0-03` | 首页已改为读取后端 discover 接口 | `done` |
-| `P0-03 Prompt Library CRUD` | `/prompts` | 提示词分类 CRUD、提示词 CRUD | `prompt_categories`, `prompts` | 契约验证 + CRUD 集成 + 提示词状态验证 | `G0` | `frontend/src/mocks/prompts.ts` | `planned` |
-| `P0-04 Writer Workspace` | `/writer` | 分组 CRUD、文章 CRUD | `writer_groups`, `writer_articles` | 契约验证 + 文章 CRUD 集成 + 交接冒烟 | `G0` | `frontend/src/mocks/writerArticles.ts` | `planned` |
-| `P0-05 Generate Task` | `/writer` | `POST /api/v1/writer/generate-tasks`, `GET /api/v1/writer/generate-tasks/{taskId}` | `generate_tasks`, `writer_articles` | 契约验证 + 任务状态集成 + 轮询冒烟 | `G0` | 本地 `setTimeout` 生文模拟 | `planned` |
-| `P0-06 Layout Workspace` | `/layout` | `POST /api/v1/layout/render`、排版草稿 CRUD | `layout_drafts` | 契约验证 + 草稿持久化集成 + 排版冒烟 | `G0` | 保存仍然只是本地 toast | `planned` |
-| `P0-07 Asset Upload` | `/layout` | `POST /api/v1/assets` | `assets` | 上传契约 + 存储集成 | `G0` | `FileReader` 仍是仅本地流程 | `planned` |
+| `P0-02 Discover Read` | `/` | `GET /api/v1/discover/articles`, `GET /api/v1/discover/hot-topics` | `discover_articles`, `hot_topics` | 契约验证 + 筛选集成 + 首页冒烟 | `G3 进行中` | 热榜已真实同步；发现文章仍为样例库，但已改为显式样例标记且不再伪装原文 | `in_progress` |
+| `P0-02A Hot Topic Sync` | `/` | `GET /api/v1/discover/hot-topics`, `POST /api/v1/discover/hot-topics` | `hot_topics` | 定时同步验证 + 多源抓取验证 + 首页热榜冒烟 | `G3 完成` | 首页热榜已切到真实多源定时同步，按 6 小时增量入库，且不再把搜索页伪装成原文直链 | `done` |
+| `P0-03 Prompt Library CRUD` | `/prompts` | `GET/POST/PATCH/DELETE /api/v1/prompt-categories`, `GET/POST/GET/PATCH/DELETE /api/v1/prompts` | `prompt_categories`, `prompts` | 契约验证 + CRUD 集成 + 提示词状态验证 + `/prompts` 冒烟 | `G3 完成，下一步 P0-04` | `frontend/src/mocks/prompts.ts` 已从 `/prompts` 主路径退役 | `done` |
+| `P0-04 Writer Workspace` | `/writer` | 分组 CRUD、文章 CRUD | `writer_groups`, `writer_articles` | 契约验证 + 文章 CRUD 集成 + 交接冒烟 | `G2` | `/writer` 主路径已脱离 `frontend/src/mocks/writerArticles.ts` | `done` |
+| `P0-05 Generate Task` | `/writer` | `POST /api/v1/writer/generate-tasks`, `GET /api/v1/writer/generate-tasks/{taskId}` | `generate_tasks`, `writer_articles` | 契约验证 + 任务状态集成 + 轮询冒烟 | `G2` | 本地 `setTimeout` 已从主路径退役，改为真实任务轮询 | `done` |
+| `P0-06 Layout Workspace` | `/layout` | `POST /api/v1/layout/render`、排版草稿 CRUD | `layout_drafts` | 契约验证 + 草稿持久化集成 + 排版冒烟 | `G1` | 保存与最近草稿恢复已接通真实接口，但封面直读与正文资源工作台仍待补齐 | `in_progress` |
+| `P0-07 Asset Upload` | `/layout` | `POST /api/v1/assets` | `assets` | 上传契约 + 存储集成 | `G1` | 封面上传已改为真实落盘，正文资源上传入口仍待继续扩展 | `in_progress` |
 
 ## 5. P0-01 详细矩阵
 
@@ -74,8 +75,8 @@
 | entity 1 | `discover_articles` | queryable | yes |
 | entity 2 | `hot_topics` | queryable | yes |
 | page states | loading / empty / error / success | all explicit | yes |
-| gate | `G3` | pass | yes |
-| next gate | `P0-03` | prompt library can now reuse stable discover entry flow | ready |
+| gate | `G3` | in progress | hot topics done; discover article real collection pending |
+| next gate | `P0-03` | prompt library can reuse stable discover entry flow after discover article collection closes the loop | partial |
 
 ## 7. 矩阵模板
 

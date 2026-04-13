@@ -3,6 +3,7 @@ import { requestAuthedJson } from "./auth";
 export type DiscoverPlatform = "weixin" | "toutiao";
 export type DiscoverTimeRange = "all" | "1d" | "3d" | "7d" | "1m" | "3m";
 export type HotTopicTrend = "up" | "down" | "stable";
+export type HotTopicPlatform = "weibo" | "baidu" | "toutiao" | "global";
 
 export type Pagination = {
   page: number;
@@ -21,7 +22,8 @@ export type DiscoverArticle = {
   views: number;
   likes: number;
   shares: number;
-  source_url: string;
+  source_url?: string | null;
+  is_sample: boolean;
   is_hot: boolean;
   is_new: boolean;
 };
@@ -29,10 +31,12 @@ export type DiscoverArticle = {
 export type HotTopic = {
   id: string;
   rank: number;
+  platform: HotTopicPlatform;
   title: string;
   heat: number;
   trend: HotTopicTrend;
   field: string;
+  source_url?: string | null;
 };
 
 export type DiscoverArticleList = {
@@ -43,6 +47,12 @@ export type DiscoverArticleList = {
 export type HotTopicList = {
   items: HotTopic[];
   pagination: Pagination;
+  synced_at?: string | null;
+};
+
+export type HotTopicRefreshResult = {
+  total: number;
+  synced_at?: string | null;
 };
 
 export type DiscoverArticleQuery = {
@@ -88,4 +98,10 @@ export async function fetchHotTopics(params: { page?: number; page_size?: number
     page_size: params.page_size,
   });
   return requestAuthedJson<HotTopicList>(`/api/v1/discover/hot-topics${queryString}`);
+}
+
+export async function refreshHotTopicsSnapshot() {
+  return requestAuthedJson<HotTopicRefreshResult>("/api/v1/discover/hot-topics", {
+    method: "POST",
+  });
 }

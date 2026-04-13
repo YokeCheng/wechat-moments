@@ -1,438 +1,795 @@
-import { useState } from 'react';
-import { prompts as initialPrompts, promptCategories as initialCategories } from '@/mocks/prompts';
-import type { PromptStatus } from '@/mocks/prompts';
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 
-const statusConfig: Record<PromptStatus, { label: string; color: string; bg: string; icon: string }> = {
-  active:     { label: '启用中', color: 'text-green-600',  bg: 'bg-green-50',  icon: 'ri-checkbox-circle-line' },
-  draft:      { label: '草稿',   color: 'text-gray-400',   bg: 'bg-gray-100',  icon: 'ri-draft-line' },
-  generating: { label: '生成中', color: 'text-orange-500', bg: 'bg-orange-50', icon: 'ri-loader-4-line' },
+import type { Prompt, PromptCategoryItem, PromptList, PromptStatus } from "@/lib/prompts";
+import {
+  createPrompt,
+  createPromptCategory,
+  deletePrompt,
+  deletePromptCategory,
+  fetchPromptCategories,
+  fetchPrompts,
+  updatePrompt,
+  updatePromptCategory,
+} from "@/lib/prompts";
+
+type Loadable<T> = {
+  status: "loading" | "success" | "error";
+  data: T | null;
+  error: string | null;
 };
 
+const ALL_CATEGORY_ID = "all";
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
+
+function toErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+}
+
+function parseTags(value: string) {
+  const seen = new Set<string>();
+  return value
+    .split(/[,，\n]/)
+    .map((item) => item.trim())
+    .filter((item) => {
+      if (!item || seen.has(item)) {
+        return false;
+      }
+      seen.add(item);
+      return true;
+    });
+}
+
+function formatPromptDate(value: string, language: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(language.startsWith("en") ? "en-US" : "zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
 const PromptsPage = () => {
-  const [categories, setCategories] = useState(initialCategories);
-  const [prompts, setPrompts] = useState(initialPrompts);
-  const [activeCategoryId, setActiveCategoryId] = useState('all');
-  const [searchText, setSearchText] = useState('');
-  const [copiedId, setCopiedId] = useState<number | null>(null);
-
-  // Modals
-  const [showAddCatModal, setShowAddCatModal] = useState(false);
-  const [showAddPromptModal, setShowAddPromptModal] = useState(false);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [showEditCatModal, setShowEditCatModal] = useState(false);
-  const [selectedPrompt, setSelectedPrompt] = useState<typeof initialPrompts[0] | null>(null);
-  const [editingCat, setEditingCat] = useState<typeof initialCategories[0] | null>(null);
-
-  // Form state
-  const [newCatName, setNewCatName] = useState('');
-  const [newPromptTitle, setNewPromptTitle] = useState('');
-  const [newPromptCat, setNewPromptCat] = useState('情感');
-  const [newPromptContent, setNewPromptContent] = useState('');
-
-  const filtered = prompts.filter((p) => {
-    if (activeCategoryId !== 'all' && p.categoryId !== activeCategoryId) return false;
-    if (searchText && !p.title.includes(searchText) && !p.content.includes(searchText)) return false;
-    return true;
+  const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
+  const [categoriesState, setCategoriesState] = useState<Loadable<PromptCategoryItem[]>>({
+    status: "loading",
+    data: null,
+    error: null,
   });
+  const [promptsState, setPromptsState] = useState<Loadable<PromptList>>({
+    status: "loading",
+    data: null,
+    error: null,
+  });
+  const [activeCategoryId, setActiveCategoryId] = useState(ALL_CATEGORY_ID);
+  const [searchText, setSearchText] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [banner, setBanner] = useState<{ tone: "success" | "error"; text: string } | null>(null);
 
-  const handleCopy = (id: number, content: string) => {
-    navigator.clipboard.writeText(content).catch(() => {});
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categoryMode, setCategoryMode] = useState<"create" | "edit">("create");
+  const [editingCategory, setEditingCategory] = useState<PromptCategoryItem | null>(null);
+  const [categoryName, setCategoryName] = useState("");
+  const [categorySaving, setCategorySaving] = useState(false);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
 
-  const handleAddCategory = () => {
-    if (!newCatName.trim()) return;
-    const newId = newCatName.toLowerCase().replace(/\s+/g, '_') + '_' + Date.now();
-    setCategories((prev) => [...prev, { id: newId, name: newCatName.trim(), count: 0 }]);
-    setNewCatName('');
-    setShowAddCatModal(false);
-  };
+  const [showPromptModal, setShowPromptModal] = useState(false);
+  const [promptMode, setPromptMode] = useState<"create" | "edit">("create");
+  const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
+  const [promptTitle, setPromptTitle] = useState("");
+  const [promptCategoryId, setPromptCategoryId] = useState("");
+  const [promptStatusValue, setPromptStatusValue] = useState<PromptStatus>("draft");
+  const [promptTags, setPromptTags] = useState("");
+  const [promptContent, setPromptContent] = useState("");
+  const [promptSaving, setPromptSaving] = useState(false);
+  const [promptError, setPromptError] = useState<string | null>(null);
 
-  const handleDeleteCategory = (id: string) => {
-    if (id === 'all') return;
-    setCategories((prev) => prev.filter((c) => c.id !== id));
-    if (activeCategoryId === id) setActiveCategoryId('all');
-  };
+  const [detailPrompt, setDetailPrompt] = useState<Prompt | null>(null);
+  const requestFallbackMessage = t("prompts.messages.requestFailed");
 
-  const handleAddPrompt = () => {
-    if (!newPromptTitle.trim()) return;
-    const cat = categories.find((c) => c.name === newPromptCat);
-    const newPrompt = {
-      id: Date.now(),
-      title: newPromptTitle.trim(),
-      category: newPromptCat,
-      categoryId: cat?.id || 'all',
-      tags: [],
-      content: newPromptContent.trim(),
-      usageCount: 0,
-      status: 'draft' as PromptStatus,
-      createdAt: new Date().toISOString().slice(0, 10),
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchPromptCategories()
+      .then((payload) => {
+        if (cancelled) {
+          return;
+        }
+        setCategoriesState({ status: "success", data: payload.items, error: null });
+        if (
+          activeCategoryId !== ALL_CATEGORY_ID &&
+          !payload.items.some((item) => item.id === activeCategoryId)
+        ) {
+          setActiveCategoryId(ALL_CATEGORY_ID);
+        }
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setCategoriesState({
+          status: "error",
+          data: null,
+          error: toErrorMessage(error, requestFallbackMessage),
+        });
+      });
+
+    return () => {
+      cancelled = true;
     };
-    setPrompts((prev) => [newPrompt, ...prev]);
-    setCategories((prev) => prev.map((c) => c.id === newPrompt.categoryId ? { ...c, count: c.count + 1 } : c));
-    setNewPromptTitle('');
-    setNewPromptContent('');
-    setShowAddPromptModal(false);
+  }, [activeCategoryId, reloadKey, requestFallbackMessage]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPromptsState((current) => ({ status: "loading", data: current.data, error: null }));
+
+    fetchPrompts({
+      category_id: activeCategoryId === ALL_CATEGORY_ID ? undefined : activeCategoryId,
+      keyword: searchText.trim() || undefined,
+      page,
+      page_size: pageSize,
+    })
+      .then((payload) => {
+        if (cancelled) {
+          return;
+        }
+        setPromptsState({ status: "success", data: payload, error: null });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setPromptsState({
+          status: "error",
+          data: null,
+          error: toErrorMessage(error, requestFallbackMessage),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCategoryId, page, pageSize, reloadKey, requestFallbackMessage, searchText]);
+
+  useEffect(() => {
+    if (!copiedId) {
+      return;
+    }
+    const timerId = window.setTimeout(() => setCopiedId(null), 1800);
+    return () => window.clearTimeout(timerId);
+  }, [copiedId]);
+
+  const categories = categoriesState.data ?? [];
+  const promptList = promptsState.data?.items ?? [];
+  const pagination = promptsState.data?.pagination ?? null;
+  const totalCount = categories.reduce((sum, item) => sum + item.count, 0);
+  const activeCategory = categories.find((item) => item.id === activeCategoryId) ?? null;
+  const totalPages = pagination ? Math.max(1, Math.ceil(pagination.total / pagination.page_size)) : 1;
+  const activeCategoryLabel =
+    activeCategoryId === ALL_CATEGORY_ID ? t("prompts.sidebar.all") : activeCategory?.name ?? "";
+
+  const statusConfig: Record<PromptStatus, { label: string; badge: string; toggle: string }> = {
+    active: {
+      label: t("prompts.status.active"),
+      badge: "bg-green-50 text-green-600",
+      toggle: t("prompts.actions.deactivate"),
+    },
+    draft: {
+      label: t("prompts.status.draft"),
+      badge: "bg-gray-100 text-gray-500",
+      toggle: t("prompts.actions.activate"),
+    },
+    generating: {
+      label: t("prompts.status.generating"),
+      badge: "bg-orange-50 text-orange-500",
+      toggle: t("prompts.actions.markActive"),
+    },
   };
 
-  const handleToggleStatus = (id: number) => {
-    setPrompts((prev) => prev.map((p) => {
-      if (p.id !== id) return p;
-      const next: PromptStatus = p.status === 'active' ? 'draft' : 'active';
-      return { ...p, status: next };
-    }));
+  const reload = () => setReloadKey((current) => current + 1);
+
+  const closeCategoryModal = () => {
+    setShowCategoryModal(false);
+    setCategorySaving(false);
+    setCategoryError(null);
   };
 
-  const handleDeletePrompt = (id: number) => {
-    setPrompts((prev) => prev.filter((p) => p.id !== id));
+  const closePromptModal = () => {
+    setShowPromptModal(false);
+    setPromptSaving(false);
+    setPromptError(null);
   };
 
-  const activeCategory = categories.find((c) => c.id === activeCategoryId);
+  const openCreateCategoryModal = () => {
+    setCategoryMode("create");
+    setEditingCategory(null);
+    setCategoryName("");
+    setCategoryError(null);
+    setShowCategoryModal(true);
+  };
+
+  const openEditCategoryModal = (category: PromptCategoryItem) => {
+    setCategoryMode("edit");
+    setEditingCategory(category);
+    setCategoryName(category.name);
+    setCategoryError(null);
+    setShowCategoryModal(true);
+  };
+
+  const openCreatePromptModal = () => {
+    setPromptMode("create");
+    setEditingPrompt(null);
+    setPromptTitle("");
+    setPromptCategoryId(activeCategoryId === ALL_CATEGORY_ID ? "" : activeCategoryId);
+    setPromptStatusValue("draft");
+    setPromptTags("");
+    setPromptContent("");
+    setPromptError(null);
+    setShowPromptModal(true);
+  };
+
+  const openEditPromptModal = (prompt: Prompt) => {
+    setPromptMode("edit");
+    setEditingPrompt(prompt);
+    setPromptTitle(prompt.title);
+    setPromptCategoryId(prompt.category_id ?? "");
+    setPromptStatusValue(prompt.status);
+    setPromptTags(prompt.tags.join(", "));
+    setPromptContent(prompt.content);
+    setPromptError(null);
+    setShowPromptModal(true);
+  };
+
+  const submitCategory = async () => {
+    const name = categoryName.trim();
+    if (!name) {
+      setCategoryError(t("prompts.category.validation.required"));
+      return;
+    }
+
+    setCategorySaving(true);
+    setCategoryError(null);
+    try {
+      if (categoryMode === "create") {
+        await createPromptCategory({ name });
+        setBanner({ tone: "success", text: t("prompts.messages.categoryCreated") });
+      } else if (editingCategory) {
+        await updatePromptCategory(editingCategory.id, { name });
+        setBanner({ tone: "success", text: t("prompts.messages.categoryUpdated") });
+      }
+      closeCategoryModal();
+      reload();
+    } catch (error: unknown) {
+      setCategoryError(toErrorMessage(error, requestFallbackMessage));
+    } finally {
+      setCategorySaving(false);
+    }
+  };
+
+  const deleteCategory = async (category: PromptCategoryItem) => {
+    if (!window.confirm(t("prompts.category.deleteConfirm", { name: category.name }))) {
+      return;
+    }
+
+    try {
+      await deletePromptCategory(category.id);
+      if (activeCategoryId === category.id) {
+        setActiveCategoryId(ALL_CATEGORY_ID);
+      }
+      setBanner({ tone: "success", text: t("prompts.messages.categoryDeleted") });
+      reload();
+    } catch (error: unknown) {
+      setBanner({ tone: "error", text: toErrorMessage(error, requestFallbackMessage) });
+    }
+  };
+
+  const submitPrompt = async () => {
+    const title = promptTitle.trim();
+    const content = promptContent.trim();
+    if (!title) {
+      setPromptError(t("prompts.prompt.validation.titleRequired"));
+      return;
+    }
+    if (!content) {
+      setPromptError(t("prompts.prompt.validation.contentRequired"));
+      return;
+    }
+
+    const payload = {
+      title,
+      category_id: promptCategoryId || null,
+      content,
+      tags: parseTags(promptTags),
+      status: promptStatusValue,
+    };
+
+    setPromptSaving(true);
+    setPromptError(null);
+    try {
+      if (promptMode === "create") {
+        await createPrompt(payload);
+        setPage(1);
+        setBanner({ tone: "success", text: t("prompts.messages.promptCreated") });
+      } else if (editingPrompt) {
+        await updatePrompt(editingPrompt.id, payload);
+        setBanner({ tone: "success", text: t("prompts.messages.promptUpdated") });
+      }
+      closePromptModal();
+      reload();
+    } catch (error: unknown) {
+      setPromptError(toErrorMessage(error, requestFallbackMessage));
+    } finally {
+      setPromptSaving(false);
+    }
+  };
+
+  const togglePromptStatus = async (prompt: Prompt) => {
+    const nextStatus: PromptStatus = prompt.status === "active" ? "draft" : "active";
+    try {
+      await updatePrompt(prompt.id, { status: nextStatus });
+      setBanner({ tone: "success", text: t("prompts.messages.statusUpdated") });
+      reload();
+    } catch (error: unknown) {
+      setBanner({ tone: "error", text: toErrorMessage(error, requestFallbackMessage) });
+    }
+  };
+
+  const removePrompt = async (prompt: Prompt) => {
+    if (!window.confirm(t("prompts.prompt.deleteConfirm", { title: prompt.title }))) {
+      return;
+    }
+
+    try {
+      await deletePrompt(prompt.id);
+      setBanner({ tone: "success", text: t("prompts.messages.promptDeleted") });
+      if (promptList.length === 1 && page > 1) {
+        setPage(page - 1);
+      } else {
+        reload();
+      }
+    } catch (error: unknown) {
+      setBanner({ tone: "error", text: toErrorMessage(error, requestFallbackMessage) });
+    }
+  };
+
+  const copyPrompt = async (prompt: Prompt) => {
+    try {
+      await navigator.clipboard.writeText(prompt.content);
+      setCopiedId(prompt.id);
+      setBanner({ tone: "success", text: t("prompts.messages.copied") });
+    } catch {
+      setBanner({ tone: "error", text: t("prompts.messages.copyFailed") });
+    }
+  };
 
   return (
-    <div className="flex-1 flex h-full overflow-hidden bg-[#F7F8FA]">
-
-      {/* Left Sidebar: Category Management */}
-      <div className="w-52 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col overflow-hidden">
-        <div className="px-4 py-4 border-b border-gray-50">
+    <div className="flex h-full flex-1 overflow-hidden bg-[#F7F8FA]">
+      <aside className="flex w-56 flex-shrink-0 flex-col overflow-hidden border-r border-gray-100 bg-white">
+        <div className="border-b border-gray-50 px-4 py-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-gray-800">分类管理</span>
+            <span className="text-sm font-bold text-gray-800">{t("prompts.sidebar.title")}</span>
             <button
-              onClick={() => setShowAddCatModal(true)}
-              className="w-6 h-6 flex items-center justify-center rounded-md bg-orange-50 text-orange-500 hover:bg-orange-100 transition-colors cursor-pointer"
-              title="新建分类"
+              onClick={openCreateCategoryModal}
+              className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md bg-orange-50 text-orange-500 transition-colors hover:bg-orange-100"
+              title={t("prompts.sidebar.new")}
             >
               <i className="ri-add-line text-sm" />
             </button>
           </div>
         </div>
 
-        <nav className="flex-1 py-2 overflow-y-auto">
-          {categories.map((cat) => (
-            <div
-              key={cat.id}
-              className={`group flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors ${
-                activeCategoryId === cat.id
-                  ? 'bg-orange-50 border-r-2 border-orange-500'
-                  : 'hover:bg-gray-50'
+        <nav className="flex-1 overflow-y-auto py-2">
+          <button
+            onClick={() => {
+              setActiveCategoryId(ALL_CATEGORY_ID);
+              setPage(1);
+            }}
+            className={`flex w-full cursor-pointer items-center justify-between px-4 py-2.5 text-left ${
+              activeCategoryId === ALL_CATEGORY_ID
+                ? "border-r-2 border-orange-500 bg-orange-50"
+                : "hover:bg-gray-50"
+            }`}
+          >
+            <span
+              className={`text-sm ${
+                activeCategoryId === ALL_CATEGORY_ID ? "font-semibold text-orange-500" : "text-gray-600"
               }`}
-              onClick={() => setActiveCategoryId(cat.id)}
             >
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-4 h-4 flex items-center justify-center flex-shrink-0">
-                  <i className={`ri-folder-line text-sm ${activeCategoryId === cat.id ? 'text-orange-500' : 'text-gray-400'}`} />
+              {t("prompts.sidebar.all")}
+            </span>
+            <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500">{totalCount}</span>
+          </button>
+
+          {categoriesState.status === "loading" && !categories.length && (
+            <p className="px-4 py-4 text-xs text-gray-400">{t("prompts.states.loadingCategories")}</p>
+          )}
+
+          {categoriesState.status === "error" && !categories.length && (
+            <div className="space-y-2 px-4 py-4">
+              <p className="text-xs text-red-500">{categoriesState.error}</p>
+              <button
+                onClick={reload}
+                className="cursor-pointer rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+              >
+                {t("prompts.common.retry")}
+              </button>
+            </div>
+          )}
+
+          {categories.map((category) => (
+            <div
+              key={category.id}
+              className={`group flex items-center justify-between px-4 py-2.5 ${
+                activeCategoryId === category.id
+                  ? "border-r-2 border-orange-500 bg-orange-50"
+                  : "hover:bg-gray-50"
+              }`}
+            >
+              <button
+                onClick={() => {
+                  setActiveCategoryId(category.id);
+                  setPage(1);
+                }}
+                className="min-w-0 flex-1 cursor-pointer text-left"
+              >
+                <span
+                  className={`block truncate text-sm ${
+                    activeCategoryId === category.id
+                      ? "font-semibold text-orange-500"
+                      : "text-gray-600"
+                  }`}
+                >
+                  {category.name}
+                </span>
+              </button>
+              <div className="flex items-center gap-1">
+                <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500">{category.count}</span>
+                <div className="hidden gap-0.5 group-hover:flex">
+                  <button
+                    onClick={() => openEditCategoryModal(category)}
+                    className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-gray-400 hover:bg-orange-50 hover:text-orange-500"
+                  >
+                    <i className="ri-edit-line text-xs" />
+                  </button>
+                  <button
+                    onClick={() => void deleteCategory(category)}
+                    className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500"
+                  >
+                    <i className="ri-delete-bin-line text-xs" />
+                  </button>
                 </div>
-                <span className={`text-sm truncate ${activeCategoryId === cat.id ? 'text-orange-500 font-semibold' : 'text-gray-600'}`}>
-                  {cat.name}
-                </span>
-              </div>
-              <div className="flex items-center gap-1 flex-shrink-0">
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                  activeCategoryId === cat.id ? 'bg-orange-100 text-orange-500' : 'bg-gray-100 text-gray-400'
-                }`}>
-                  {cat.id === 'all' ? prompts.length : prompts.filter((p) => p.categoryId === cat.id).length}
-                </span>
-                {cat.id !== 'all' && (
-                  <div className="hidden group-hover:flex items-center gap-0.5">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setEditingCat(cat); setShowEditCatModal(true); }}
-                      className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-orange-500 hover:bg-orange-50 transition-colors cursor-pointer"
-                    >
-                      <i className="ri-edit-line text-xs" />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDeleteCategory(cat.id); }}
-                      className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer"
-                    >
-                      <i className="ri-delete-bin-line text-xs" />
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
           ))}
         </nav>
+      </aside>
 
-        <div className="px-4 py-3 border-t border-gray-50">
-          <button
-            onClick={() => setShowAddCatModal(true)}
-            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-gray-200 text-xs text-gray-400 hover:text-orange-500 hover:border-orange-300 hover:bg-orange-50/30 transition-all cursor-pointer whitespace-nowrap"
-          >
-            <i className="ri-add-line text-xs" />
-            新建分类
-          </button>
-        </div>
-      </div>
-
-      {/* Right: Prompt List */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Toolbar */}
-        <div className="bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-3 flex-shrink-0">
+      <section className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex flex-wrap items-center gap-3 border-b border-gray-100 bg-white px-6 py-3">
           <div>
-            <span className="text-sm font-bold text-gray-800">{activeCategory?.name || '全部'}</span>
-            <span className="text-xs text-gray-400 ml-2">{filtered.length} 个提示词</span>
+            <span className="text-sm font-bold text-gray-800">{activeCategoryLabel}</span>
+            <span className="ml-2 text-xs text-gray-400">
+              {pagination?.total ?? promptList.length} {t("prompts.toolbar.countUnit")}
+            </span>
           </div>
-          <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-1.5 bg-white ml-auto w-52">
-            <div className="w-4 h-4 flex items-center justify-center">
-              <i className="ri-search-line text-gray-400 text-sm" />
-            </div>
+
+          <div className="ml-auto flex w-64 items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5">
+            <i className="ri-search-line text-sm text-gray-400" />
             <input
               type="text"
               value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              placeholder="搜索提示词..."
-              className="flex-1 text-sm text-gray-600 placeholder-gray-300 outline-none bg-transparent"
+              onChange={(event) => {
+                setSearchText(event.target.value);
+                setPage(1);
+              }}
+              placeholder={t("prompts.toolbar.searchPlaceholder")}
+              className="flex-1 bg-transparent text-sm text-gray-600 outline-none placeholder:text-gray-300"
             />
           </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-400">{t("prompts.toolbar.pageSize")}</span>
+            <select
+              value={pageSize}
+              onChange={(event) => {
+                setPageSize(Number(event.target.value));
+                setPage(1);
+              }}
+              className="cursor-pointer rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 outline-none"
+            >
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <button
-            onClick={() => setShowAddPromptModal(true)}
-            className="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer whitespace-nowrap"
+            onClick={openCreatePromptModal}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-600"
           >
-            <div className="w-4 h-4 flex items-center justify-center">
-              <i className="ri-add-line text-sm" />
-            </div>
-            新建提示词
+            <i className="ri-add-line text-sm" />
+            {t("prompts.toolbar.newPrompt")}
           </button>
         </div>
 
-        {/* Table — flex col, fills remaining height */}
-        <div className="flex-1 px-6 py-4 flex flex-col min-h-0 overflow-hidden">
-          <div className="flex flex-col h-full bg-white rounded-xl border border-gray-100 overflow-hidden">
-            {filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center flex-1">
-                <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-gray-50 mb-3">
-                  <i className="ri-file-text-line text-2xl text-gray-300" />
-                </div>
-                <p className="text-sm text-gray-400">暂无提示词</p>
-                <p className="text-xs text-gray-300 mt-1">点击右上角「新建提示词」开始创建</p>
+        <div className="flex min-h-0 flex-1 flex-col px-6 py-4">
+          {banner && (
+            <div
+              className={`mb-3 rounded-xl border px-4 py-3 text-sm ${
+                banner.tone === "error"
+                  ? "border-red-100 bg-red-50 text-red-500"
+                  : "border-green-100 bg-green-50 text-green-600"
+              }`}
+            >
+              {banner.text}
+            </div>
+          )}
+
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-100 bg-white">
+            {promptsState.status === "loading" && !promptsState.data ? (
+              <div className="flex flex-1 items-center justify-center text-sm text-gray-500">
+                {t("prompts.states.loadingPrompts")}
+              </div>
+            ) : promptsState.status === "error" ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+                <p className="text-sm font-medium text-gray-800">{t("prompts.states.errorTitle")}</p>
+                <p className="text-sm text-gray-500">{promptsState.error}</p>
+                <button
+                  onClick={reload}
+                  className="cursor-pointer rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600"
+                >
+                  {t("prompts.common.retry")}
+                </button>
+              </div>
+            ) : promptList.length === 0 ? (
+              <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+                <p className="text-sm text-gray-500">{t("prompts.states.emptyTitle")}</p>
+                <p className="mt-1 text-xs text-gray-400">{t("prompts.states.emptySubtitle")}</p>
               </div>
             ) : (
               <>
-                {/* thead 固定 */}
-                <table className="w-full flex-shrink-0">
-                  <thead>
-                    <tr className="bg-gray-50 text-xs text-gray-400 font-medium">
-                      <th className="text-left px-5 py-3">提示词名称</th>
-                      <th className="text-left px-5 py-3 w-20">分类</th>
-                      <th className="text-left px-5 py-3 w-24">状态</th>
-                      <th className="text-left px-5 py-3 w-32">标签</th>
-                      <th className="text-right px-5 py-3 w-24">使用次数</th>
-                      <th className="text-left px-5 py-3 w-24">创建时间</th>
-                      <th className="text-center px-5 py-3 w-44">操作</th>
-                    </tr>
-                  </thead>
-                </table>
-                {/* tbody 滚动 */}
-                <div className="flex-1 overflow-y-auto min-h-0">
-                  <table className="w-full">
+                <div className="min-h-0 flex-1 overflow-auto">
+                  <table className="w-full min-w-[920px]">
+                    <thead>
+                      <tr className="bg-gray-50 text-xs font-medium text-gray-400">
+                        <th className="px-5 py-3 text-left">{t("prompts.columns.title")}</th>
+                        <th className="w-28 px-5 py-3 text-left">{t("prompts.columns.category")}</th>
+                        <th className="w-24 px-5 py-3 text-left">{t("prompts.columns.status")}</th>
+                        <th className="w-40 px-5 py-3 text-left">{t("prompts.columns.tags")}</th>
+                        <th className="w-24 px-5 py-3 text-right">{t("prompts.columns.usage")}</th>
+                        <th className="w-28 px-5 py-3 text-left">{t("prompts.columns.createdAt")}</th>
+                        <th className="w-72 px-5 py-3 text-center">{t("prompts.columns.actions")}</th>
+                      </tr>
+                    </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {filtered.map((prompt) => {
-                        const sc = statusConfig[prompt.status];
-                        return (
-                          <tr key={prompt.id} className="hover:bg-orange-50/20 transition-colors group">
-                            <td className="px-5 py-3 max-w-0">
-                              <p className="text-sm font-medium text-gray-800 truncate">{prompt.title}</p>
-                              <p className="text-xs text-gray-400 mt-0.5 truncate">{prompt.content}</p>
-                            </td>
-                            <td className="px-5 py-3 w-20">
-                              <span className="text-xs bg-orange-50 text-orange-500 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">{prompt.category}</span>
-                            </td>
-                            <td className="px-5 py-3 w-24">
-                              <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap ${sc.bg} ${sc.color}`}>
-                                <i className={`${sc.icon} text-xs ${prompt.status === 'generating' ? 'animate-spin' : ''}`} />
-                                {sc.label}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3 w-32">
-                              <div className="flex items-center gap-1 flex-nowrap overflow-hidden">
-                                {prompt.tags.slice(0, 2).map((tag) => (
-                                  <span key={tag} className="text-xs bg-gray-50 text-gray-400 px-1.5 py-0.5 rounded-full whitespace-nowrap flex-shrink-0">{tag}</span>
-                                ))}
-                                {prompt.tags.length > 2 && <span className="text-xs text-gray-300 flex-shrink-0">+{prompt.tags.length - 2}</span>}
-                              </div>
-                            </td>
-                            <td className="px-5 py-3 w-24 text-right">
-                              <span className="text-sm font-mono text-gray-700 whitespace-nowrap">{prompt.usageCount.toLocaleString()}</span>
-                            </td>
-                            <td className="px-5 py-3 w-24">
-                              <span className="text-xs text-gray-400 whitespace-nowrap">{prompt.createdAt}</span>
-                            </td>
-                            <td className="px-5 py-3 w-44">
-                              <div className="flex items-center justify-center gap-1 whitespace-nowrap">
-                                <button onClick={() => { setSelectedPrompt(prompt); setShowDetailModal(true); }} className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-gray-400 hover:text-orange-500 hover:bg-orange-50 transition-colors cursor-pointer whitespace-nowrap">
-                                  <i className="ri-eye-line text-xs" />查看
-                                </button>
-                                <button onClick={() => handleCopy(prompt.id, prompt.content)} className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors cursor-pointer whitespace-nowrap ${copiedId === prompt.id ? 'text-green-600 bg-green-50' : 'text-gray-400 hover:text-orange-500 hover:bg-orange-50'}`}>
-                                  <i className={`${copiedId === prompt.id ? 'ri-check-line' : 'ri-file-copy-line'} text-xs`} />
-                                  {copiedId === prompt.id ? '已复制' : '复制'}
-                                </button>
-                                <button onClick={() => handleToggleStatus(prompt.id)} className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-gray-400 hover:text-orange-500 hover:bg-orange-50 transition-colors cursor-pointer whitespace-nowrap">
-                                  <i className={`${prompt.status === 'active' ? 'ri-pause-circle-line' : 'ri-play-circle-line'} text-xs`} />
-                                  {prompt.status === 'active' ? '停用' : '启用'}
-                                </button>
-                                <button onClick={() => handleDeletePrompt(prompt.id)} className="w-6 h-6 flex items-center justify-center rounded-md text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer">
-                                  <i className="ri-delete-bin-line text-xs" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {promptList.map((prompt) => (
+                        <tr key={prompt.id} className="hover:bg-orange-50/20">
+                          <td className="max-w-0 px-5 py-3">
+                            <p className="truncate text-sm font-medium text-gray-800">{prompt.title}</p>
+                            <p className="mt-0.5 truncate text-xs text-gray-400">{prompt.content}</p>
+                          </td>
+                          <td className="px-5 py-3 text-xs text-gray-600">
+                            {prompt.category_name ?? t("prompts.prompt.uncategorized")}
+                          </td>
+                          <td className="px-5 py-3">
+                            <span className={`rounded-full px-2 py-1 text-xs font-medium ${statusConfig[prompt.status].badge}`}>
+                              {statusConfig[prompt.status].label}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3">
+                            <div className="flex flex-wrap gap-1">
+                              {prompt.tags.length > 0 ? (
+                                prompt.tags.slice(0, 3).map((tag) => (
+                                  <span key={tag} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                                    {tag}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-xs text-gray-300">-</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-5 py-3 text-right text-sm font-mono text-gray-700">{prompt.usage_count}</td>
+                          <td className="px-5 py-3 text-xs text-gray-400">
+                            {formatPromptDate(prompt.created_at, i18n.resolvedLanguage || i18n.language || "zh")}
+                          </td>
+                          <td className="px-5 py-3">
+                            <div className="flex items-center justify-center gap-1">
+                              <button onClick={() => setDetailPrompt(prompt)} className="rounded-md px-2 py-1 text-xs text-gray-400 hover:bg-orange-50 hover:text-orange-500">
+                                {t("prompts.actions.view")}
+                              </button>
+                              <button onClick={() => openEditPromptModal(prompt)} className="rounded-md px-2 py-1 text-xs text-gray-400 hover:bg-orange-50 hover:text-orange-500">
+                                {t("prompts.actions.edit")}
+                              </button>
+                              <button onClick={() => void copyPrompt(prompt)} className="rounded-md px-2 py-1 text-xs text-gray-400 hover:bg-orange-50 hover:text-orange-500">
+                                {copiedId === prompt.id ? t("prompts.actions.copied") : t("prompts.actions.copy")}
+                              </button>
+                              <button onClick={() => void togglePromptStatus(prompt)} className="rounded-md px-2 py-1 text-xs text-gray-400 hover:bg-orange-50 hover:text-orange-500">
+                                {statusConfig[prompt.status].toggle}
+                              </button>
+                              <button onClick={() => void removePrompt(prompt)} className="rounded-md px-2 py-1 text-xs text-gray-400 hover:bg-red-50 hover:text-red-500">
+                                {t("prompts.actions.delete")}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
+
+                {pagination && (
+                  <div className="flex items-center justify-between border-t border-gray-100 px-5 py-3">
+                    <span className="text-xs text-gray-400">
+                      {t("prompts.pagination.summary", {
+                        currentPage: pagination.page,
+                        totalPages,
+                        totalItems: pagination.total,
+                      })}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setPage((current) => Math.max(1, current - 1))}
+                        disabled={pagination.page <= 1}
+                        className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300"
+                      >
+                        {t("prompts.pagination.previous")}
+                      </button>
+                      <button
+                        onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                        disabled={!pagination.has_more}
+                        className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300"
+                      >
+                        {t("prompts.pagination.next")}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Add Category Modal */}
-      {showAddCatModal && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setShowAddCatModal(false)}>
-          <div className="bg-white rounded-2xl p-6 w-[360px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="font-bold text-gray-900">新建分类</h3>
-              <button onClick={() => setShowAddCatModal(false)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 cursor-pointer">
-                <i className="ri-close-line text-gray-500" />
+      {showCategoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={closeCategoryModal}>
+          <div className="w-[360px] max-w-[90vw] rounded-2xl bg-white p-6" onClick={(event) => event.stopPropagation()}>
+            <h3 className="mb-5 text-base font-bold text-gray-900">
+              {categoryMode === "create" ? t("prompts.category.createTitle") : t("prompts.category.editTitle")}
+            </h3>
+            <input
+              type="text"
+              value={categoryName}
+              onChange={(event) => setCategoryName(event.target.value)}
+              placeholder={t("prompts.category.namePlaceholder")}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-orange-400"
+            />
+            {categoryError && <p className="mt-2 text-xs text-red-500">{categoryError}</p>}
+            <div className="mt-5 flex gap-2">
+              <button onClick={closeCategoryModal} className="flex-1 rounded-lg border border-gray-200 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                {t("prompts.common.cancel")}
               </button>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-700 mb-1.5 block">分类名称</label>
-              <input
-                type="text"
-                value={newCatName}
-                onChange={(e) => setNewCatName(e.target.value)}
-                placeholder="例如：情感、教育、财经..."
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors"
-                onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
-              />
-            </div>
-            <div className="flex gap-2 mt-5">
-              <button onClick={() => setShowAddCatModal(false)} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 cursor-pointer whitespace-nowrap transition-colors">取消</button>
-              <button onClick={handleAddCategory} className="flex-1 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 cursor-pointer whitespace-nowrap transition-colors">创建</button>
+              <button
+                onClick={() => void submitCategory()}
+                disabled={categorySaving}
+                className="flex-1 rounded-lg bg-orange-500 py-2 text-sm font-medium text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-orange-300"
+              >
+                {categoryMode === "create" ? t("prompts.category.create") : t("prompts.common.save")}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Edit Category Modal */}
-      {showEditCatModal && editingCat && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setShowEditCatModal(false)}>
-          <div className="bg-white rounded-2xl p-6 w-[360px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="font-bold text-gray-900">编辑分类</h3>
-              <button onClick={() => setShowEditCatModal(false)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 cursor-pointer">
-                <i className="ri-close-line text-gray-500" />
-              </button>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-700 mb-1.5 block">分类名称</label>
-              <input
-                type="text"
-                defaultValue={editingCat.name}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors"
-              />
-            </div>
-            <div className="flex gap-2 mt-5">
-              <button onClick={() => setShowEditCatModal(false)} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 cursor-pointer whitespace-nowrap transition-colors">取消</button>
-              <button onClick={() => setShowEditCatModal(false)} className="flex-1 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 cursor-pointer whitespace-nowrap transition-colors">保存</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add Prompt Modal */}
-      {showAddPromptModal && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setShowAddPromptModal(false)}>
-          <div className="bg-white rounded-2xl p-6 w-[520px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="font-bold text-gray-900">新建提示词</h3>
-              <button onClick={() => setShowAddPromptModal(false)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 cursor-pointer">
-                <i className="ri-close-line text-gray-500" />
-              </button>
-            </div>
+      {showPromptModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={closePromptModal}>
+          <div className="w-[560px] max-w-[92vw] rounded-2xl bg-white p-6" onClick={(event) => event.stopPropagation()}>
+            <h3 className="mb-5 text-base font-bold text-gray-900">
+              {promptMode === "create" ? t("prompts.prompt.createTitle") : t("prompts.prompt.editTitle")}
+            </h3>
             <div className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">提示词标题 <span className="text-red-400">*</span></label>
-                <input
-                  type="text"
-                  value={newPromptTitle}
-                  onChange={(e) => setNewPromptTitle(e.target.value)}
-                  placeholder="给提示词起个名字..."
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">所属分类</label>
+              <input
+                type="text"
+                value={promptTitle}
+                onChange={(event) => setPromptTitle(event.target.value)}
+                placeholder={t("prompts.prompt.titlePlaceholder")}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-orange-400"
+              />
+              <div className="grid gap-4 md:grid-cols-2">
                 <select
-                  value={newPromptCat}
-                  onChange={(e) => setNewPromptCat(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors bg-white"
+                  value={promptCategoryId}
+                  onChange={(event) => setPromptCategoryId(event.target.value)}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-orange-400"
                 >
-                  {categories.filter((c) => c.id !== 'all').map((c) => (
-                    <option key={c.id}>{c.name}</option>
+                  <option value="">{t("prompts.prompt.uncategorized")}</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
                   ))}
                 </select>
+                <select
+                  value={promptStatusValue}
+                  onChange={(event) => setPromptStatusValue(event.target.value as PromptStatus)}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-orange-400"
+                >
+                  <option value="draft">{t("prompts.status.draft")}</option>
+                  <option value="active">{t("prompts.status.active")}</option>
+                  <option value="generating">{t("prompts.status.generating")}</option>
+                </select>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">提示词内容</label>
-                <textarea
-                  value={newPromptContent}
-                  onChange={(e) => setNewPromptContent(e.target.value)}
-                  placeholder="输入提示词内容，用{变量}表示可替换的部分..."
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors resize-none h-32"
-                  maxLength={500}
-                />
-              </div>
+              <input
+                type="text"
+                value={promptTags}
+                onChange={(event) => setPromptTags(event.target.value)}
+                placeholder={t("prompts.prompt.tagsPlaceholder")}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-orange-400"
+              />
+              <textarea
+                value={promptContent}
+                onChange={(event) => setPromptContent(event.target.value)}
+                placeholder={t("prompts.prompt.contentPlaceholder")}
+                className="h-40 w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-orange-400"
+              />
             </div>
-            <div className="flex gap-2 mt-5">
-              <button onClick={() => setShowAddPromptModal(false)} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 cursor-pointer whitespace-nowrap transition-colors">取消</button>
-              <button onClick={handleAddPrompt} className="flex-1 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 cursor-pointer whitespace-nowrap transition-colors">保存</button>
+            {promptError && <p className="mt-2 text-xs text-red-500">{promptError}</p>}
+            <div className="mt-5 flex gap-2">
+              <button onClick={closePromptModal} className="flex-1 rounded-lg border border-gray-200 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                {t("prompts.common.cancel")}
+              </button>
+              <button
+                onClick={() => void submitPrompt()}
+                disabled={promptSaving}
+                className="flex-1 rounded-lg bg-orange-500 py-2 text-sm font-medium text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-orange-300"
+              >
+                {t("prompts.common.save")}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Detail Modal */}
-      {showDetailModal && selectedPrompt && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setShowDetailModal(false)}>
-          <div className="bg-white rounded-2xl p-6 w-[640px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
+      {detailPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setDetailPrompt(null)}>
+          <div className="w-[680px] max-w-[92vw] rounded-2xl bg-white p-6" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-4 flex items-start justify-between gap-4">
               <div>
-                <h3 className="font-bold text-gray-900 text-base">{selectedPrompt.title}</h3>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs bg-orange-50 text-orange-500 px-2 py-0.5 rounded-full font-medium">{selectedPrompt.category}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusConfig[selectedPrompt.status].bg} ${statusConfig[selectedPrompt.status].color}`}>
-                    {statusConfig[selectedPrompt.status].label}
-                  </span>
-                  <span className="text-xs text-gray-400">使用 {selectedPrompt.usageCount.toLocaleString()} 次</span>
+                <h3 className="text-base font-bold text-gray-900">{detailPrompt.title}</h3>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-400">
+                  <span>{detailPrompt.category_name ?? t("prompts.prompt.uncategorized")}</span>
+                  <span>{t("prompts.prompt.usage", { count: detailPrompt.usage_count })}</span>
                 </div>
               </div>
-              <button onClick={() => setShowDetailModal(false)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 cursor-pointer">
-                <i className="ri-close-line text-gray-500" />
+              <button onClick={() => setDetailPrompt(null)} className="text-gray-400 hover:text-gray-600">
+                <i className="ri-close-line text-lg" />
               </button>
             </div>
-            <div className="bg-gray-50 rounded-xl p-5 mb-4 min-h-[240px] max-h-[400px] overflow-y-auto">
-              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{selectedPrompt.content}</p>
+            <div className="mb-4 max-h-[400px] min-h-[240px] overflow-y-auto rounded-xl bg-gray-50 p-5">
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{detailPrompt.content}</p>
             </div>
-            {selectedPrompt.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-4">
-                {selectedPrompt.tags.map((tag) => (
-                  <span key={tag} className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{tag}</span>
-                ))}
-              </div>
-            )}
             <div className="flex gap-2">
-              <button
-                onClick={() => handleCopy(selectedPrompt.id, selectedPrompt.content)}
-                className="flex-1 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 cursor-pointer whitespace-nowrap transition-colors"
-              >
-                {copiedId === selectedPrompt.id ? '已复制 ✓' : '复制提示词'}
+              <button onClick={() => void copyPrompt(detailPrompt)} className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm text-gray-600 hover:bg-gray-50">
+                {copiedId === detailPrompt.id ? t("prompts.actions.copied") : t("prompts.actions.copy")}
               </button>
-              <button className="flex-1 py-2.5 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 cursor-pointer whitespace-nowrap transition-colors">
-                立即生文
+              <button
+                onClick={() => navigate(`/writer?promptId=${encodeURIComponent(detailPrompt.id)}`)}
+                className="flex-1 rounded-lg bg-orange-500 py-2.5 text-sm font-medium text-white hover:bg-orange-600"
+              >
+                {t("prompts.actions.write")}
               </button>
             </div>
           </div>

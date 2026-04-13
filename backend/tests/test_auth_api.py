@@ -1,28 +1,11 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
-import pytest
 from sqlalchemy import select
 
-from app.db.base import Base
 from app.db.models.auth import Subscription, SubscriptionStatus
-from app.db.session import SessionLocal, engine
-from app.main import app
+from app.db.session import SessionLocal
 from app.repo.auth_repo import get_user_by_username
-from app.services.auth_service import ensure_auth_seed_data
-
-
-@pytest.fixture()
-def client() -> TestClient:
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    with SessionLocal() as session:
-        ensure_auth_seed_data(session)
-
-    with TestClient(app) as test_client:
-        yield test_client
-
-    Base.metadata.drop_all(bind=engine)
 
 
 def test_dev_login_and_me_flow(client: TestClient) -> None:

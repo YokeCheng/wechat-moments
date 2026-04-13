@@ -833,6 +833,12 @@ backend/
 - `idx_discover_articles_views`
 - `idx_discover_articles_title_gin`，建议全文检索
 
+说明：
+
+- 当前 `discover_articles` 仍作为首页发现文章样例库，用于打通筛选、分页、写作跳转和后续真实采集切片的统一契约。
+- 当记录的 `source_url` 仍为内部占位地址时，API 层必须把该记录标记为 `is_sample=true`，并将响应里的 `source_url` 置空；不得回退为搜索页或伪装成原文页。
+- 首页必须显式区分“样例文章”和“真实热榜快照”，避免把样例内容误判为实时采集结果。
+
 ### 7. `hot_topics`
 
 热搜榜表。
@@ -840,14 +846,25 @@ backend/
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | id | varchar(32) pk | 热搜 ID |
-| platform | varchar(32) | 来源平台，预留 |
+| platform | varchar(32) | 来源平台：`weibo/baidu/toutiao` |
 | rank_no | integer | 排名 |
 | title | varchar(255) | 词条 |
 | heat | bigint | 热度 |
 | trend | varchar(16) | `up/down/stable` |
 | field | varchar(32) | 领域 |
 | snapshot_date | date | 榜单日期 |
+| snapshot_at | timestamptz | 本次同步批次时间 |
 | created_at | timestamptz | 创建时间 |
+| updated_at | timestamptz | 最近一次同步入库时间 |
+
+说明：
+- `hot_topics` 以批次方式保存热榜快照，查询最新榜单时按最新 `snapshot_at` 读取。
+- 运行时默认每 6 小时同步一次微博、百度、头条热榜，且支持手动触发刷新。
+- 单次同步只追加新批次，不覆盖历史快照，便于审计和回溯。
+- 热度低于 `10000` 的词条不计入热榜。
+- 外部来源短时失败时，可回退到现有快照或 seed 数据，不阻断首页读取。
+- `raw_json.source_url` 只保存真实详情页直链；若上游只提供搜索页或话题搜索入口，则返回空值而不是伪装成原文链接。
+- `updated_at` 用于前端展示最近同步时间，也作为热榜同步审计的时间锚点。
 
 ### 8. `article_favorites`
 

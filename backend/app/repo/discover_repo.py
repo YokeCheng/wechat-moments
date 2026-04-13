@@ -66,6 +66,44 @@ def upsert_hot_topic(db: Session, **payload: Any) -> HotTopic:
     return topic
 
 
+def append_hot_topics_snapshot(db: Session, payloads: list[dict[str, Any]]) -> list[HotTopic]:
+    topics: list[HotTopic] = []
+    for payload in payloads:
+        topics.append(create_hot_topic(db, **payload))
+    db.flush()
+    return topics
+
+
+def query_latest_hot_topics_by_platform(
+    db: Session,
+    platform: str,
+    *,
+    limit: int,
+) -> list[HotTopic]:
+    latest_snapshot_at = db.scalar(
+        select(func.max(HotTopic.snapshot_at)).where(HotTopic.platform == platform)
+    )
+    if latest_snapshot_at is None:
+        return []
+
+    statement = (
+        select(HotTopic)
+        .where(
+            HotTopic.platform == platform,
+            HotTopic.snapshot_at == latest_snapshot_at,
+        )
+        .order_by(HotTopic.rank_no.asc())
+        .limit(limit)
+    )
+    return list(db.scalars(statement).all())
+
+
+def get_latest_hot_topics_synced_at(db: Session) -> datetime | None:
+    statement = select(func.max(HotTopic.snapshot_at))
+    value = db.scalar(statement)
+    return value if isinstance(value, datetime) else None
+
+
 def query_discover_articles(
     db: Session,
     filters: DiscoverArticleQuery,
@@ -94,13 +132,13 @@ def query_hot_topics(
     page: int,
     page_size: int,
 ) -> tuple[list[HotTopic], int]:
-    latest_snapshot_date = db.scalar(select(func.max(HotTopic.snapshot_date)))
-    if latest_snapshot_date is None:
+    latest_snapshot_at = db.scalar(select(func.max(HotTopic.snapshot_at)))
+    if latest_snapshot_at is None:
         return [], 0
 
     statement = (
         select(HotTopic)
-        .where(HotTopic.snapshot_date == latest_snapshot_date)
+        .where(HotTopic.snapshot_at == latest_snapshot_at)
         .order_by(HotTopic.rank_no.asc())
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -108,7 +146,7 @@ def query_hot_topics(
     count_statement = (
         select(func.count())
         .select_from(HotTopic)
-        .where(HotTopic.snapshot_date == latest_snapshot_date)
+        .where(HotTopic.snapshot_at == latest_snapshot_at)
     )
     total = int(db.scalar(count_statement) or 0)
     return list(db.scalars(statement).all()), total

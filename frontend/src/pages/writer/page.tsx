@@ -1,146 +1,381 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { writerArticles as initialArticles, WriterArticle, WriterArticleStatus, writerGroups } from '@/mocks/writerArticles';
-import { prompts } from '@/mocks/prompts';
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
-const statusConfig: Record<WriterArticleStatus, { label: string; color: string; bg: string; icon: string }> = {
-  completed: { label: '已完成', color: 'text-green-600', bg: 'bg-green-50', icon: 'ri-checkbox-circle-line' },
-  generating: { label: '生成中', color: 'text-orange-500', bg: 'bg-orange-50', icon: 'ri-loader-4-line' },
-  failed: { label: '生成失败', color: 'text-red-500', bg: 'bg-red-50', icon: 'ri-error-warning-line' },
-  draft: { label: '草稿', color: 'text-gray-400', bg: 'bg-gray-100', icon: 'ri-file-edit-line' },
+import { ApiError } from "@/lib/auth";
+import { fetchPrompts, type Prompt } from "@/lib/prompts";
+import {
+  createGenerateTask,
+  createWriterGroup,
+  deleteWriterArticle,
+  deleteWriterGroup,
+  fetchGenerateTask,
+  fetchWriterArticle,
+  fetchWriterArticles,
+  fetchWriterGroups,
+  updateWriterArticle,
+  type WriterArticle,
+  type WriterArticleStatus,
+  type WriterGroup,
+} from "@/lib/writer";
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+const ALL_GROUP_ID = "__all__";
+
+type GenerateFormState = {
+  title: string;
+  group_id: string;
+  prompt_id: string;
+  ref_url: string;
+  image_count: number;
 };
 
+function buildEmptyGenerateForm(): GenerateFormState {
+  return {
+    title: "",
+    group_id: "",
+    prompt_id: "",
+    ref_url: "",
+    image_count: 3,
+  };
+}
+
+function formatWriterDate(value: string, language: string) {
+  return new Intl.DateTimeFormat(language.startsWith("en") ? "en-US" : "zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function resolveApiMessage(error: unknown, fallback: string) {
+  if (error instanceof ApiError) {
+    return error.message || fallback;
+  }
+  if (error instanceof Error) {
+    return error.message || fallback;
+  }
+  return fallback;
+}
+
 const WriterPage = () => {
-  const [articles, setArticles] = useState<WriterArticle[]>(initialArticles);
-  const [activeGroup, setActiveGroup] = useState('全部');
-  const [searchText, setSearchText] = useState('');
-  const [generating, setGenerating] = useState(false);
-
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  // Modals
+  const [groups, setGroups] = useState<WriterGroup[]>([]);
+  const [promptOptions, setPromptOptions] = useState<Prompt[]>([]);
+  const [articles, setArticles] = useState<WriterArticle[]>([]);
+  const [articleTotal, setArticleTotal] = useState(0);
+  const [allArticleTotal, setAllArticleTotal] = useState(0);
+  const [activeGroupId, setActiveGroupId] = useState(ALL_GROUP_ID);
+  const [searchText, setSearchText] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [loadingGroups, setLoadingGroups] = useState(true);
+  const [loadingArticles, setLoadingArticles] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [notice, setNotice] = useState("");
+
   const [showAddGroupModal, setShowAddGroupModal] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+
   const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [generateForm, setGenerateForm] = useState<GenerateFormState>(buildEmptyGenerateForm);
+
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingArticle, setEditingArticle] = useState<WriterArticle | null>(null);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deletingArticleId, setDeletingArticleId] = useState<string | null>(null);
+  const [prefillApplied, setPrefillApplied] = useState(false);
 
-  // Form state
-  const [newGroupName, setNewGroupName] = useState('');
-  const [genTitle, setGenTitle] = useState('');
-  const [genGroup, setGenGroup] = useState('');
-  const [genPrompt, setGenPrompt] = useState('');
-  const [genRefLink, setGenRefLink] = useState('');
-  const [genImageCount, setGenImageCount] = useState(3);
+  const language = i18n.resolvedLanguage || i18n.language || "zh";
 
-  // Groups (remove '全部' from management)
-  const [groups, setGroups] = useState(writerGroups.filter(g => g !== '全部'));
+  const statusMap = useMemo(
+    () => ({
+      completed: {
+        label: t("writer.status.completed"),
+        color: "text-green-600",
+        bg: "bg-green-50",
+        icon: "ri-checkbox-circle-line",
+      },
+      generating: {
+        label: t("writer.status.generating"),
+        color: "text-orange-500",
+        bg: "bg-orange-50",
+        icon: "ri-loader-4-line",
+      },
+      failed: {
+        label: t("writer.status.failed"),
+        color: "text-red-500",
+        bg: "bg-red-50",
+        icon: "ri-error-warning-line",
+      },
+      draft: {
+        label: t("writer.status.draft"),
+        color: "text-gray-500",
+        bg: "bg-gray-100",
+        icon: "ri-file-edit-line",
+      },
+    }),
+    [t],
+  );
 
-  const filtered = articles.filter((a) => {
-    if (activeGroup !== '全部' && a.group !== activeGroup) return false;
-    if (searchText && !a.title.includes(searchText)) return false;
-    return true;
-  });
+  const currentGroupName =
+    activeGroupId === ALL_GROUP_ID
+      ? t("writer.sidebar.all")
+      : groups.find((group) => group.id === activeGroupId)?.name ?? t("writer.sidebar.all");
 
-  const activePrompts = prompts.filter((p) => p.status === 'active');
+  const totalPages = Math.max(1, Math.ceil(articleTotal / pageSize));
 
-  const handleAddGroup = () => {
-    if (!newGroupName.trim()) return;
-    setGroups((prev) => [...prev, newGroupName.trim()]);
-    setNewGroupName('');
-    setShowAddGroupModal(false);
-  };
+  async function loadAllArticleTotal() {
+    try {
+      const response = await fetchWriterArticles({ page: 1, page_size: 1 });
+      setAllArticleTotal(response.pagination.total);
+    } catch {
+      // Keep the previous total if the background refresh fails.
+    }
+  }
 
-  const handleDeleteGroup = (groupName: string) => {
-    setGroups((prev) => prev.filter((g) => g !== groupName));
-    if (activeGroup === groupName) setActiveGroup('全部');
-  };
+  async function loadGroups() {
+    try {
+      setLoadingGroups(true);
+      const response = await fetchWriterGroups();
+      setGroups(response.items);
+    } finally {
+      setLoadingGroups(false);
+    }
+  }
 
-  const handleGenerate = () => {
-    if (!genTitle.trim()) return;
+  async function loadPromptOptions() {
+    const response = await fetchPrompts({ page: 1, page_size: 100 });
+    setPromptOptions(response.items);
+  }
 
-    const foundPrompt = activePrompts.find((p) => String(p.id) === genPrompt);
-    const promptTitle = foundPrompt ? foundPrompt.title : '';
+  async function loadArticles() {
+    try {
+      setLoadingArticles(true);
+      setErrorMessage("");
+      const response = await fetchWriterArticles({
+        group_id: activeGroupId === ALL_GROUP_ID ? undefined : activeGroupId,
+        keyword: searchText || undefined,
+        page,
+        page_size: pageSize,
+      });
+      setArticles(response.items);
+      setArticleTotal(response.pagination.total);
+    } catch (error) {
+      setArticles([]);
+      setArticleTotal(0);
+      setErrorMessage(resolveApiMessage(error, t("writer.messages.requestFailed")));
+    } finally {
+      setLoadingArticles(false);
+    }
+  }
 
-    const newArticle: WriterArticle = {
-      id: Date.now(),
-      title: genTitle.trim(),
-      group: genGroup,
-      promptTitle,
-      status: 'generating',
-      wordCount: 0,
-      createdAt: new Date().toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      }).replace(/\//g, '-'),
-      imageCount: genImageCount,
-      refLink: genRefLink || undefined,
-      content: '',
-    };
+  useEffect(() => {
+    void (async () => {
+      try {
+        await Promise.all([loadGroups(), loadPromptOptions(), loadAllArticleTotal()]);
+      } catch (error) {
+        setErrorMessage(resolveApiMessage(error, t("writer.messages.requestFailed")));
+      }
+    })();
+  }, [t]);
 
-    setArticles((prev) => [newArticle, ...prev]);
-    setGenerating(true);
-    setShowGenerateModal(false);
+  useEffect(() => {
+    void loadArticles();
+  }, [activeGroupId, searchText, page, pageSize, t]);
 
-    // Reset form
-    setGenTitle('');
-    setGenGroup('');
-    setGenPrompt('');
-    setGenRefLink('');
-    setGenImageCount(3);
+  useEffect(() => {
+    if (prefillApplied) {
+      return;
+    }
 
-    // Simulate async generation
-    setTimeout(() => {
-      setArticles((prev) =>
-        prev.map((a) =>
-          a.id === newArticle.id
-            ? {
-                ...a,
-                status: 'completed',
-                wordCount: Math.floor(Math.random() * 600) + 600,
-                content: `# ${a.title}\n\n在这个信息爆炸的时代，每一个创作者都在寻找突破的方法。今天，我们来深入探讨这个话题，为你提供最实用的解决方案。\n\n## 一、问题的本质\n\n很多人在面对这个问题时，往往陷入了一个误区：他们以为只要努力就能成功。但事实上，方向比努力更重要。\n\n根据最新数据显示，超过80%的内容创作者在起步阶段都会遇到同样的困境——不知道如何找到自己的定位。\n\n## 二、三个核心策略\n\n**策略一：精准定位你的受众**\n\n在开始创作之前，你需要清楚地知道你的内容是为谁而写的。不同的受众有不同的需求和痛点。\n\n**策略二：建立内容创作系统**\n\n成功的创作者都有一套属于自己的内容生产流程。从选题、写作到发布，每个环节都需要标准化。\n\n**策略三：数据驱动优化**\n\n定期分析你的内容数据，找出表现最好的内容类型，然后持续复制这种成功。\n\n## 三、立即行动\n\n理论再好，不如立即行动。从今天开始，按照上面的三个策略，制定你的内容创作计划。\n\n记住：成功不是一蹴而就的，但只要坚持正确的方法，你一定能够实现突破。`,
-              }
-            : a
-        )
-      );
-      setGenerating(false);
-    }, 3000);
-  };
+    const title = searchParams.get("title") ?? "";
+    const promptId = searchParams.get("promptId") ?? "";
+    const refUrl = searchParams.get("ref") ?? "";
+    if (!title && !promptId && !refUrl) {
+      setPrefillApplied(true);
+      return;
+    }
 
-  const handleUpdate = (updated: Partial<WriterArticle>) => {
-    if (!editingArticle) return;
-    setArticles((prev) =>
-      prev.map((a) => (a.id === editingArticle.id ? { ...a, ...updated } : a))
-    );
-    setShowEditModal(false);
-    setEditingArticle(null);
-  };
+    setGenerateForm({
+      title,
+      prompt_id: promptId,
+      ref_url: refUrl,
+      group_id: "",
+      image_count: 3,
+    });
+    setShowGenerateModal(true);
+    setPrefillApplied(true);
+  }, [prefillApplied, searchParams]);
 
-  const handleDelete = () => {
-    if (deletingId === null) return;
-    setArticles((prev) => prev.filter((a) => a.id !== deletingId));
-    setDeletingId(null);
-  };
+  async function handleCreateGroup() {
+    const trimmedName = newGroupName.trim();
+    if (!trimmedName) {
+      setNotice(t("writer.messages.groupNameRequired"));
+      return;
+    }
 
-  const handleGoLayout = (article: WriterArticle) => {
-    navigate(`/layout?content=${encodeURIComponent(article.content)}`);
-  };
+    try {
+      setSubmitting(true);
+      await createWriterGroup({ name: trimmedName });
+      setNewGroupName("");
+      setShowAddGroupModal(false);
+      setNotice(t("writer.messages.groupCreated"));
+      await Promise.all([loadGroups(), loadAllArticleTotal()]);
+    } catch (error) {
+      setNotice(resolveApiMessage(error, t("writer.messages.requestFailed")));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDeleteGroup(groupId: string) {
+    try {
+      setSubmitting(true);
+      await deleteWriterGroup(groupId);
+      if (activeGroupId === groupId) {
+        setActiveGroupId(ALL_GROUP_ID);
+        setPage(1);
+      }
+      setNotice(t("writer.messages.groupDeleted"));
+      await Promise.all([loadGroups(), loadAllArticleTotal(), loadArticles()]);
+    } catch (error) {
+      setNotice(resolveApiMessage(error, t("writer.messages.requestFailed")));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function pollTask(taskId: string) {
+    for (let index = 0; index < 30; index += 1) {
+      try {
+        const task = await fetchGenerateTask(taskId);
+        if (task.status === "succeeded" || task.status === "failed" || task.status === "cancelled") {
+          await Promise.all([loadArticles(), loadAllArticleTotal()]);
+          if (task.status === "succeeded") {
+            setNotice(t("writer.messages.generateSucceeded"));
+          } else {
+            setNotice(task.error_message || t("writer.messages.generateFailed"));
+          }
+          return;
+        }
+      } catch (error) {
+        setNotice(resolveApiMessage(error, t("writer.messages.requestFailed")));
+        return;
+      }
+
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, 500);
+      });
+    }
+
+    await loadArticles();
+  }
+
+  async function handleGenerate() {
+    if (!generateForm.title.trim()) {
+      setNotice(t("writer.messages.titleRequired"));
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      const task = await createGenerateTask({
+        title: generateForm.title.trim(),
+        group_id: generateForm.group_id || null,
+        prompt_id: generateForm.prompt_id || null,
+        ref_url: generateForm.ref_url || null,
+        image_count: generateForm.image_count,
+      });
+      setShowGenerateModal(false);
+      setGenerateForm(buildEmptyGenerateForm());
+      setPage(1);
+      setNotice(t("writer.messages.generateQueued"));
+      await Promise.all([loadArticles(), loadAllArticleTotal()]);
+      void pollTask(task.id);
+    } catch (error) {
+      setNotice(resolveApiMessage(error, t("writer.messages.requestFailed")));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleSaveEdit() {
+    if (!editingArticle) {
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      await updateWriterArticle(editingArticle.id, {
+        title: editingArticle.title,
+        group_id: editingArticle.group_id,
+        prompt_id: editingArticle.prompt_id,
+        ref_url: editingArticle.ref_url,
+        image_count: editingArticle.image_count,
+        status: editingArticle.status,
+      });
+      setShowEditModal(false);
+      setEditingArticle(null);
+      setNotice(t("writer.messages.articleUpdated"));
+      await Promise.all([loadArticles(), loadAllArticleTotal()]);
+    } catch (error) {
+      setNotice(resolveApiMessage(error, t("writer.messages.requestFailed")));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDeleteArticle() {
+    if (!deletingArticleId) {
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      await deleteWriterArticle(deletingArticleId);
+      setDeletingArticleId(null);
+      setNotice(t("writer.messages.articleDeleted"));
+      if (articles.length === 1 && page > 1) {
+        setPage((current) => current - 1);
+      } else {
+        await Promise.all([loadArticles(), loadAllArticleTotal()]);
+      }
+    } catch (error) {
+      setNotice(resolveApiMessage(error, t("writer.messages.requestFailed")));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleGoLayout(articleId: string) {
+    try {
+      const article = await fetchWriterArticle(articleId);
+      if (article.status !== "completed") {
+        setNotice(t("writer.messages.layoutOnlyCompleted"));
+        return;
+      }
+      navigate(`/layout?articleId=${encodeURIComponent(article.id)}`);
+    } catch (error) {
+      setNotice(resolveApiMessage(error, t("writer.messages.requestFailed")));
+    }
+  }
 
   return (
     <div className="flex-1 flex h-full overflow-hidden bg-[#F7F8FA]">
-
-      {/* Left Sidebar: Group Management */}
-      <div className="w-52 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col overflow-hidden">
+      <div className="w-56 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col overflow-hidden">
         <div className="px-4 py-4 border-b border-gray-50">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-gray-800">分组管理</span>
+            <span className="text-sm font-bold text-gray-800">{t("writer.sidebar.title")}</span>
             <button
               onClick={() => setShowAddGroupModal(true)}
-              className="w-6 h-6 flex items-center justify-center rounded-md bg-orange-50 text-orange-500 hover:bg-orange-100 transition-colors cursor-pointer"
-              title="新建分组"
+              className="w-7 h-7 flex items-center justify-center rounded-md bg-orange-50 text-orange-500 hover:bg-orange-100 transition-colors cursor-pointer"
+              title={t("writer.sidebar.newGroup")}
             >
               <i className="ri-add-line text-sm" />
             </button>
@@ -148,196 +383,246 @@ const WriterPage = () => {
         </div>
 
         <nav className="flex-1 py-2 overflow-y-auto">
-          {/* All */}
-          <div
-            className={`group flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors ${
-              activeGroup === '全部'
-                ? 'bg-orange-50 border-r-2 border-orange-500'
-                : 'hover:bg-gray-50'
+          <button
+            type="button"
+            className={`w-full flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors ${
+              activeGroupId === ALL_GROUP_ID ? "bg-orange-50 border-r-2 border-orange-500" : "hover:bg-gray-50"
             }`}
-            onClick={() => setActiveGroup('全部')}
+            onClick={() => {
+              setActiveGroupId(ALL_GROUP_ID);
+              setPage(1);
+            }}
           >
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-4 h-4 flex items-center justify-center flex-shrink-0">
-                <i className={`ri-folder-line text-sm ${activeGroup === '全部' ? 'text-orange-500' : 'text-gray-400'}`} />
-              </div>
-              <span className={`text-sm truncate ${activeGroup === '全部' ? 'text-orange-500 font-semibold' : 'text-gray-600'}`}>
-                全部
-              </span>
-            </div>
-            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-              activeGroup === '全部' ? 'bg-orange-100 text-orange-500' : 'bg-gray-100 text-gray-400'
-            }`}>
-              {articles.length}
+            <span className={`text-sm ${activeGroupId === ALL_GROUP_ID ? "text-orange-500 font-semibold" : "text-gray-600"}`}>
+              {t("writer.sidebar.all")}
             </span>
-          </div>
+            <span className={`text-xs px-1.5 py-0.5 rounded-full ${activeGroupId === ALL_GROUP_ID ? "bg-orange-100 text-orange-500" : "bg-gray-100 text-gray-400"}`}>
+              {allArticleTotal}
+            </span>
+          </button>
 
-          {/* Groups */}
-          {groups.map((group) => (
-            <div
-              key={group}
-              className={`group flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors ${
-                activeGroup === group
-                  ? 'bg-orange-50 border-r-2 border-orange-500'
-                  : 'hover:bg-gray-50'
-              }`}
-              onClick={() => setActiveGroup(group)}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-4 h-4 flex items-center justify-center flex-shrink-0">
-                  <i className={`ri-folder-line text-sm ${activeGroup === group ? 'text-orange-500' : 'text-gray-400'}`} />
-                </div>
-                <span className={`text-sm truncate ${activeGroup === group ? 'text-orange-500 font-semibold' : 'text-gray-600'}`}>
-                  {group}
+          {loadingGroups ? (
+            <div className="px-4 py-6 text-xs text-gray-400">{t("writer.states.loadingGroups")}</div>
+          ) : (
+            groups.map((group) => (
+              <div
+                key={group.id}
+                className={`group flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors ${
+                  activeGroupId === group.id ? "bg-orange-50 border-r-2 border-orange-500" : "hover:bg-gray-50"
+                }`}
+                onClick={() => {
+                  setActiveGroupId(group.id);
+                  setPage(1);
+                }}
+              >
+                <span className={`text-sm truncate ${activeGroupId === group.id ? "text-orange-500 font-semibold" : "text-gray-600"}`}>
+                  {group.name}
                 </span>
-              </div>
-              <div className="flex items-center gap-1 flex-shrink-0">
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                  activeGroup === group ? 'bg-orange-100 text-orange-500' : 'bg-gray-100 text-gray-400'
-                }`}>
-                  {articles.filter((a) => a.group === group).length}
-                </span>
-                <div className="hidden group-hover:flex items-center gap-0.5">
+                <div className="flex items-center gap-1">
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${activeGroupId === group.id ? "bg-orange-100 text-orange-500" : "bg-gray-100 text-gray-400"}`}>
+                    {group.article_count}
+                  </span>
                   <button
-                    onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group); }}
-                    className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer"
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void handleDeleteGroup(group.id);
+                    }}
+                    className="hidden group-hover:flex w-5 h-5 items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer"
+                    title={t("writer.actions.deleteGroup")}
                   >
                     <i className="ri-delete-bin-line text-xs" />
                   </button>
                 </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </nav>
 
         <div className="px-4 py-3 border-t border-gray-50">
           <button
             onClick={() => setShowAddGroupModal(true)}
-            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-gray-200 text-xs text-gray-400 hover:text-orange-500 hover:border-orange-300 hover:bg-orange-50/30 transition-all cursor-pointer whitespace-nowrap"
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-gray-200 text-xs text-gray-400 hover:text-orange-500 hover:border-orange-300 hover:bg-orange-50/30 transition-all cursor-pointer"
           >
             <i className="ri-add-line text-xs" />
-            新建分组
+            {t("writer.sidebar.newGroup")}
           </button>
         </div>
       </div>
 
-      {/* Right: Article List */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Toolbar */}
         <div className="bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-3 flex-shrink-0">
           <div>
-            <span className="text-sm font-bold text-gray-800">{activeGroup}</span>
-            <span className="text-xs text-gray-400 ml-2">{filtered.length} 篇文章</span>
+            <div className="text-sm font-bold text-gray-800">{currentGroupName}</div>
+            <div className="text-xs text-gray-400 mt-0.5">{t("writer.toolbar.summary", { count: articleTotal })}</div>
           </div>
-          <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-1.5 bg-white ml-auto w-52">
-            <div className="w-4 h-4 flex items-center justify-center">
+
+          <div className="ml-auto flex items-center gap-2">
+            <label className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2 bg-white w-64">
               <i className="ri-search-line text-gray-400 text-sm" />
-            </div>
-            <input
-              type="text"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              placeholder="搜索文章..."
-              className="flex-1 text-sm text-gray-600 placeholder-gray-300 outline-none bg-transparent"
-            />
+              <input
+                type="text"
+                value={searchText}
+                onChange={(event) => {
+                  setSearchText(event.target.value);
+                  setPage(1);
+                }}
+                placeholder={t("writer.toolbar.searchPlaceholder")}
+                className="flex-1 text-sm text-gray-600 placeholder-gray-300 outline-none bg-transparent"
+              />
+            </label>
+
+            <label className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 bg-white">
+              <span className="text-xs text-gray-400">{t("writer.toolbar.pageSize")}</span>
+              <select
+                value={pageSize}
+                onChange={(event) => {
+                  setPageSize(Number(event.target.value));
+                  setPage(1);
+                }}
+                className="bg-transparent outline-none"
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              onClick={() => setShowGenerateModal(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 transition-colors cursor-pointer"
+            >
+              <i className="ri-magic-line text-sm" />
+              {t("writer.toolbar.generate")}
+            </button>
           </div>
-          <button
-            onClick={() => setShowGenerateModal(true)}
-            disabled={generating}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
-              generating
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-orange-500 hover:bg-orange-600 text-white'
-            }`}
-          >
-            <div className="w-4 h-4 flex items-center justify-center">
-              <i className={`${generating ? 'ri-loader-4-line animate-spin' : 'ri-magic-line'} text-sm`} />
-            </div>
-            {generating ? '生成中...' : '一键生文'}
-          </button>
         </div>
 
-        {/* Table — flex col, fills remaining height */}
+        {notice ? (
+          <div className="px-6 py-3 text-sm text-orange-600 bg-orange-50 border-b border-orange-100 flex items-center justify-between">
+            <span>{notice}</span>
+            <button type="button" onClick={() => setNotice("")} className="text-orange-400 hover:text-orange-600">
+              <i className="ri-close-line" />
+            </button>
+          </div>
+        ) : null}
+
         <div className="flex-1 px-6 py-4 flex flex-col min-h-0 overflow-hidden">
           <div className="flex flex-col h-full bg-white rounded-xl border border-gray-100 overflow-hidden">
-            {filtered.length === 0 ? (
+            {loadingArticles ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center flex-1">
+                <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-orange-50 mb-3">
+                  <i className="ri-loader-4-line text-2xl text-orange-400 animate-spin" />
+                </div>
+                <p className="text-sm text-gray-500">{t("writer.states.loadingArticles")}</p>
+              </div>
+            ) : errorMessage ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center flex-1">
+                <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-red-50 mb-3">
+                  <i className="ri-error-warning-line text-2xl text-red-400" />
+                </div>
+                <p className="text-sm font-medium text-gray-700">{t("writer.states.errorTitle")}</p>
+                <p className="text-xs text-gray-400 mt-1">{errorMessage}</p>
+                <button
+                  onClick={() => void loadArticles()}
+                  className="mt-4 px-4 py-2 rounded-lg bg-orange-500 text-white text-sm hover:bg-orange-600 transition-colors"
+                >
+                  {t("writer.common.retry")}
+                </button>
+              </div>
+            ) : articles.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center flex-1">
                 <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-gray-50 mb-3">
                   <i className="ri-file-text-line text-2xl text-gray-300" />
                 </div>
-                <p className="text-sm text-gray-400">暂无文章</p>
-                <p className="text-xs text-gray-300 mt-1">点击右上角「一键生文」开始创作</p>
+                <p className="text-sm font-medium text-gray-600">{t("writer.states.emptyTitle")}</p>
+                <p className="text-xs text-gray-400 mt-1">{t("writer.states.emptySubtitle")}</p>
               </div>
             ) : (
               <>
-                {/* thead 固定 */}
                 <table className="w-full flex-shrink-0">
                   <thead>
                     <tr className="bg-gray-50 text-xs text-gray-400 font-medium">
-                      <th className="text-left px-5 py-3 w-[35%]">文章标题</th>
-                      <th className="text-left px-5 py-3 w-[12%]">分组</th>
-                      <th className="text-left px-5 py-3 w-[18%]">提示词</th>
-                      <th className="text-left px-5 py-3 w-[10%]">状态</th>
-                      <th className="text-left px-5 py-3 w-[10%]">字数</th>
-                      <th className="text-left px-5 py-3 w-[15%]">创建时间</th>
-                      <th className="text-center px-5 py-3 w-32">操作</th>
+                      <th className="text-left px-5 py-3 w-[30%]">{t("writer.columns.title")}</th>
+                      <th className="text-left px-5 py-3 w-[12%]">{t("writer.columns.group")}</th>
+                      <th className="text-left px-5 py-3 w-[18%]">{t("writer.columns.prompt")}</th>
+                      <th className="text-left px-5 py-3 w-[12%]">{t("writer.columns.status")}</th>
+                      <th className="text-left px-5 py-3 w-[8%]">{t("writer.columns.words")}</th>
+                      <th className="text-left px-5 py-3 w-[12%]">{t("writer.columns.updatedAt")}</th>
+                      <th className="text-center px-5 py-3 w-[120px]">{t("writer.columns.actions")}</th>
                     </tr>
                   </thead>
                 </table>
-                {/* tbody 滚动 */}
+
                 <div className="flex-1 overflow-y-auto min-h-0">
                   <table className="w-full">
                     <tbody className="divide-y divide-gray-50">
-                      {filtered.map((article) => {
-                        const sc = statusConfig[article.status];
+                      {articles.map((article) => {
+                        const status = statusMap[article.status as WriterArticleStatus];
+                        const canGoLayout = article.status === "completed";
                         return (
-                          <tr key={article.id} className="hover:bg-orange-50/20 transition-colors group">
-                            <td className="px-5 py-3 w-[35%] max-w-0">
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-orange-50 flex-shrink-0">
-                                  <i className="ri-file-text-line text-orange-400 text-sm" />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-medium text-gray-800 truncate leading-snug">{article.title}</p>
-                                  {article.refLink && (
-                                    <p className="text-xs text-gray-400 mt-0.5 truncate">
-                                      <i className="ri-link text-xs mr-0.5" />参考链接
-                                    </p>
-                                  )}
-                                </div>
+                          <tr key={article.id} className="hover:bg-orange-50/30 transition-colors">
+                            <td className="px-5 py-3 w-[30%]">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-gray-800 truncate">{article.title}</p>
+                                {article.ref_url ? (
+                                  <a
+                                    href={article.ref_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-xs text-orange-500 hover:text-orange-600 truncate inline-flex items-center gap-1 mt-1"
+                                  >
+                                    <i className="ri-link text-xs" />
+                                    {t("writer.actions.reference")}
+                                  </a>
+                                ) : null}
                               </div>
                             </td>
                             <td className="px-5 py-3 w-[12%]">
-                              {article.group ? (
-                                <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 whitespace-nowrap block truncate max-w-[80px]">{article.group}</span>
-                              ) : (
-                                <span className="text-xs text-gray-300">—</span>
-                              )}
+                              <span className="text-xs text-gray-600">{article.group_name || t("writer.values.ungrouped")}</span>
                             </td>
-                            <td className="px-5 py-3 w-[18%] max-w-0">
-                              <p className="text-xs text-gray-500 truncate">{article.promptTitle || '—'}</p>
+                            <td className="px-5 py-3 w-[18%]">
+                              <span className="text-xs text-gray-600">{article.prompt_title || t("writer.values.noPrompt")}</span>
                             </td>
-                            <td className="px-5 py-3 w-[10%]">
-                              <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap ${sc.bg} ${sc.color}`}>
-                                <i className={`${sc.icon} text-xs ${article.status === 'generating' ? 'animate-spin' : ''}`} />
-                                {sc.label}
+                            <td className="px-5 py-3 w-[12%]">
+                              <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ${status.bg} ${status.color}`}>
+                                <i className={`${status.icon} ${article.status === "generating" ? "animate-spin" : ""}`} />
+                                {status.label}
                               </span>
                             </td>
-                            <td className="px-5 py-3 w-[10%]">
-                              <span className="text-xs text-gray-500 whitespace-nowrap">{article.wordCount > 0 ? `${article.wordCount} 字` : '—'}</span>
-                            </td>
-                            <td className="px-5 py-3 w-[15%]">
-                              <span className="text-xs text-gray-400 whitespace-nowrap">{article.createdAt}</span>
-                            </td>
-                            <td className="px-5 py-3 w-32">
-                              <div className="flex items-center justify-center gap-1 whitespace-nowrap">
-                                <button onClick={() => { setEditingArticle(article); setShowEditModal(true); }} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer" title="编辑">
+                            <td className="px-5 py-3 w-[8%] text-xs text-gray-500">{article.word_count}</td>
+                            <td className="px-5 py-3 w-[12%] text-xs text-gray-400">{formatWriterDate(article.updated_at, language)}</td>
+                            <td className="px-5 py-3 w-[120px]">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingArticle(article);
+                                    setShowEditModal(true);
+                                  }}
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                                  title={t("writer.actions.edit")}
+                                >
                                   <i className="ri-edit-line text-sm" />
                                 </button>
-                                <button onClick={() => article.status === 'completed' && handleGoLayout(article)} className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors cursor-pointer ${article.status === 'completed' ? 'text-gray-400 hover:text-orange-500 hover:bg-orange-50' : 'text-gray-200 cursor-not-allowed'}`} title={article.status === 'completed' ? '一键排版' : '文章未生成完成'}>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleGoLayout(article.id)}
+                                  className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
+                                    canGoLayout ? "text-gray-400 hover:text-orange-500 hover:bg-orange-50" : "text-gray-200 cursor-not-allowed"
+                                  }`}
+                                  title={canGoLayout ? t("writer.actions.layout") : t("writer.messages.layoutOnlyCompleted")}
+                                >
                                   <i className="ri-layout-line text-sm" />
                                 </button>
-                                <button onClick={() => setDeletingId(article.id)} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer" title="删除">
+                                <button
+                                  type="button"
+                                  onClick={() => setDeletingArticleId(article.id)}
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                  title={t("writer.actions.delete")}
+                                >
                                   <i className="ri-delete-bin-line text-sm" />
                                 </button>
                               </div>
@@ -351,210 +636,318 @@ const WriterPage = () => {
               </>
             )}
           </div>
+
+          <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
+            <span>{t("writer.pagination.summary", { currentPage: page, totalPages, totalItems: articleTotal })}</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={page <= 1}
+                className="px-3 py-2 rounded-lg border border-gray-200 disabled:text-gray-300 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+              >
+                {t("writer.pagination.previous")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage((current) => (current < totalPages ? current + 1 : current))}
+                disabled={page >= totalPages}
+                className="px-3 py-2 rounded-lg border border-gray-200 disabled:text-gray-300 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+              >
+                {t("writer.pagination.next")}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Add Group Modal */}
-      {showAddGroupModal && (
+      {showAddGroupModal ? (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setShowAddGroupModal(false)}>
-          <div className="bg-white rounded-2xl p-6 w-[360px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl p-6 w-[360px] max-w-[90vw]" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
-              <h3 className="font-bold text-gray-900">新建分组</h3>
-              <button onClick={() => setShowAddGroupModal(false)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 cursor-pointer">
+              <h3 className="font-bold text-gray-900">{t("writer.modal.newGroupTitle")}</h3>
+              <button onClick={() => setShowAddGroupModal(false)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100">
                 <i className="ri-close-line text-gray-500" />
               </button>
             </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-700 mb-1.5 block">分组名称</label>
-              <input
-                type="text"
-                value={newGroupName}
-                onChange={(e) => setNewGroupName(e.target.value)}
-                placeholder="例如：情感类、财经类..."
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors"
-                onKeyDown={(e) => e.key === 'Enter' && handleAddGroup()}
-              />
-            </div>
+            <label className="text-xs font-semibold text-gray-700 mb-1.5 block">{t("writer.modal.groupNameLabel")}</label>
+            <input
+              type="text"
+              value={newGroupName}
+              onChange={(event) => setNewGroupName(event.target.value)}
+              placeholder={t("writer.modal.groupNamePlaceholder")}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors"
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  void handleCreateGroup();
+                }
+              }}
+            />
             <div className="flex gap-2 mt-5">
-              <button onClick={() => setShowAddGroupModal(false)} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 cursor-pointer whitespace-nowrap transition-colors">取消</button>
-              <button onClick={handleAddGroup} className="flex-1 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 cursor-pointer whitespace-nowrap transition-colors">创建</button>
+              <button onClick={() => setShowAddGroupModal(false)} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">
+                {t("writer.common.cancel")}
+              </button>
+              <button
+                onClick={() => void handleCreateGroup()}
+                disabled={submitting}
+                className="flex-1 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 disabled:opacity-60"
+              >
+                {t("writer.actions.create")}
+              </button>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* Generate Modal */}
-      {showGenerateModal && (
+      {showGenerateModal ? (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setShowGenerateModal(false)}>
-          <div className="bg-white rounded-2xl p-6 w-[480px] max-w-[90vw] max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl p-6 w-[520px] max-w-[92vw]" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
-              <h3 className="font-bold text-gray-900">智能生文</h3>
-              <button onClick={() => setShowGenerateModal(false)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 cursor-pointer">
+              <h3 className="font-bold text-gray-900">{t("writer.modal.generateTitle")}</h3>
+              <button onClick={() => setShowGenerateModal(false)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100">
                 <i className="ri-close-line text-gray-500" />
               </button>
             </div>
+
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">文章标题 <span className="text-red-400">*</span></label>
+                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">{t("writer.modal.articleTitleLabel")}</label>
                 <input
                   type="text"
-                  value={genTitle}
-                  onChange={(e) => setGenTitle(e.target.value)}
-                  placeholder="输入文章标题或关键词..."
+                  value={generateForm.title}
+                  onChange={(event) => setGenerateForm((current) => ({ ...current, title: event.target.value }))}
+                  placeholder={t("writer.modal.articleTitlePlaceholder")}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors"
                 />
               </div>
+
               <div>
-                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">选择分组</label>
+                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">{t("writer.modal.groupLabel")}</label>
                 <select
-                  value={genGroup}
-                  onChange={(e) => setGenGroup(e.target.value)}
+                  value={generateForm.group_id}
+                  onChange={(event) => setGenerateForm((current) => ({ ...current, group_id: event.target.value }))}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors bg-white"
                 >
-                  <option value="">不分组</option>
-                  {groups.map((g) => (
-                    <option key={g} value={g}>{g}</option>
+                  <option value="">{t("writer.values.ungrouped")}</option>
+                  {groups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
                   ))}
                 </select>
               </div>
+
               <div>
-                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">选择提示词</label>
+                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">{t("writer.modal.promptLabel")}</label>
                 <select
-                  value={genPrompt}
-                  onChange={(e) => setGenPrompt(e.target.value)}
+                  value={generateForm.prompt_id}
+                  onChange={(event) => setGenerateForm((current) => ({ ...current, prompt_id: event.target.value }))}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors bg-white"
                 >
-                  <option value="">不使用提示词</option>
-                  {activePrompts.map((p) => (
-                    <option key={p.id} value={String(p.id)}>{p.title}</option>
+                  <option value="">{t("writer.values.noPrompt")}</option>
+                  {promptOptions.map((prompt) => (
+                    <option key={prompt.id} value={prompt.id}>
+                      {prompt.title}
+                    </option>
                   ))}
                 </select>
               </div>
+
               <div>
-                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">参考素材链接</label>
+                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">{t("writer.modal.referenceLabel")}</label>
                 <input
                   type="text"
-                  value={genRefLink}
-                  onChange={(e) => setGenRefLink(e.target.value)}
-                  placeholder="粘贴参考文章链接（可选）..."
+                  value={generateForm.ref_url}
+                  onChange={(event) => setGenerateForm((current) => ({ ...current, ref_url: event.target.value }))}
+                  placeholder={t("writer.modal.referencePlaceholder")}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors"
                 />
               </div>
+
               <div>
-                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">图片数量：{genImageCount} 张</label>
-                <input
-                  type="range"
-                  min={0}
-                  max={10}
-                  value={genImageCount}
-                  onChange={(e) => setGenImageCount(Number(e.target.value))}
-                  className="w-full accent-orange-500"
-                />
-                <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <span>0</span>
-                  <span>10</span>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-semibold text-gray-700">{t("writer.modal.imageCountLabel")}</label>
+                  <span className="text-xs text-orange-500 font-medium">{generateForm.image_count}</span>
                 </div>
-              </div>
-            </div>
-            <div className="flex gap-2 mt-5">
-              <button onClick={() => setShowGenerateModal(false)} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 cursor-pointer whitespace-nowrap transition-colors">取消</button>
-              <button onClick={handleGenerate} disabled={!genTitle.trim()} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${genTitle.trim() ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>开始生成</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Modal */}
-      {showEditModal && editingArticle && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setShowEditModal(false)}>
-          <div className="bg-white rounded-2xl p-6 w-[480px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="font-bold text-gray-900">编辑文章信息</h3>
-              <button onClick={() => setShowEditModal(false)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 cursor-pointer">
-                <i className="ri-close-line text-gray-500" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">文章标题 <span className="text-red-400">*</span></label>
-                <input
-                  type="text"
-                  defaultValue={editingArticle.title}
-                  onChange={(e) => setEditingArticle({ ...editingArticle, title: e.target.value })}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">所属分组</label>
-                <select
-                  defaultValue={editingArticle.group}
-                  onChange={(e) => setEditingArticle({ ...editingArticle, group: e.target.value })}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors bg-white"
-                >
-                  <option value="">不分组</option>
-                  {groups.map((g) => (
-                    <option key={g} value={g}>{g}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">使用提示词</label>
-                <select
-                  defaultValue={editingArticle.promptTitle}
-                  onChange={(e) => setEditingArticle({ ...editingArticle, promptTitle: e.target.value })}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors bg-white"
-                >
-                  <option value="">未使用提示词</option>
-                  {prompts.map((p) => (
-                    <option key={p.id} value={p.title}>{p.title}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">参考素材链接</label>
-                <input
-                  type="text"
-                  defaultValue={editingArticle.refLink || ''}
-                  onChange={(e) => setEditingArticle({ ...editingArticle, refLink: e.target.value })}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">图片数量：{editingArticle.imageCount} 张</label>
                 <input
                   type="range"
                   min={0}
                   max={10}
-                  defaultValue={editingArticle.imageCount}
-                  onChange={(e) => setEditingArticle({ ...editingArticle, imageCount: Number(e.target.value) })}
+                  value={generateForm.image_count}
+                  onChange={(event) => setGenerateForm((current) => ({ ...current, image_count: Number(event.target.value) }))}
                   className="w-full accent-orange-500"
                 />
               </div>
             </div>
+
             <div className="flex gap-2 mt-5">
-              <button onClick={() => setShowEditModal(false)} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 cursor-pointer whitespace-nowrap transition-colors">取消</button>
-              <button onClick={() => handleUpdate({ title: editingArticle.title, group: editingArticle.group, promptTitle: editingArticle.promptTitle, refLink: editingArticle.refLink, imageCount: editingArticle.imageCount })} className="flex-1 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 cursor-pointer whitespace-nowrap transition-colors">保存修改</button>
+              <button onClick={() => setShowGenerateModal(false)} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">
+                {t("writer.common.cancel")}
+              </button>
+              <button
+                onClick={() => void handleGenerate()}
+                disabled={submitting}
+                className="flex-1 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 disabled:opacity-60"
+              >
+                {t("writer.actions.generate")}
+              </button>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* Delete Confirm */}
-      {deletingId !== null && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setDeletingId(null)}>
-          <div className="bg-white rounded-2xl w-80 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      {showEditModal && editingArticle ? (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setShowEditModal(false)}>
+          <div className="bg-white rounded-2xl p-6 w-[520px] max-w-[92vw]" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-bold text-gray-900">{t("writer.modal.editArticleTitle")}</h3>
+              <button onClick={() => setShowEditModal(false)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100">
+                <i className="ri-close-line text-gray-500" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">{t("writer.modal.articleTitleLabel")}</label>
+                <input
+                  type="text"
+                  value={editingArticle.title}
+                  onChange={(event) => setEditingArticle({ ...editingArticle, title: event.target.value })}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">{t("writer.modal.groupLabel")}</label>
+                <select
+                  value={editingArticle.group_id ?? ""}
+                  onChange={(event) => {
+                    const group = groups.find((item) => item.id === event.target.value);
+                    setEditingArticle({
+                      ...editingArticle,
+                      group_id: event.target.value || null,
+                      group_name: group?.name ?? null,
+                    });
+                  }}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors bg-white"
+                >
+                  <option value="">{t("writer.values.ungrouped")}</option>
+                  {groups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">{t("writer.modal.promptLabel")}</label>
+                <select
+                  value={editingArticle.prompt_id ?? ""}
+                  onChange={(event) => {
+                    const prompt = promptOptions.find((item) => item.id === event.target.value);
+                    setEditingArticle({
+                      ...editingArticle,
+                      prompt_id: event.target.value || null,
+                      prompt_title: prompt?.title ?? null,
+                    });
+                  }}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors bg-white"
+                >
+                  <option value="">{t("writer.values.noPrompt")}</option>
+                  {promptOptions.map((prompt) => (
+                    <option key={prompt.id} value={prompt.id}>
+                      {prompt.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">{t("writer.modal.statusLabel")}</label>
+                <select
+                  value={editingArticle.status}
+                  onChange={(event) =>
+                    setEditingArticle({
+                      ...editingArticle,
+                      status: event.target.value as WriterArticleStatus,
+                    })
+                  }
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors bg-white"
+                >
+                  {(["draft", "generating", "completed", "failed"] as WriterArticleStatus[]).map((statusKey) => (
+                    <option key={statusKey} value={statusKey}>
+                      {statusMap[statusKey].label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">{t("writer.modal.referenceLabel")}</label>
+                <input
+                  type="text"
+                  value={editingArticle.ref_url ?? ""}
+                  onChange={(event) => setEditingArticle({ ...editingArticle, ref_url: event.target.value || null })}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 transition-colors"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-semibold text-gray-700">{t("writer.modal.imageCountLabel")}</label>
+                  <span className="text-xs text-orange-500 font-medium">{editingArticle.image_count}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={10}
+                  value={editingArticle.image_count}
+                  onChange={(event) => setEditingArticle({ ...editingArticle, image_count: Number(event.target.value) })}
+                  className="w-full accent-orange-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-5">
+              <button onClick={() => setShowEditModal(false)} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">
+                {t("writer.common.cancel")}
+              </button>
+              <button
+                onClick={() => void handleSaveEdit()}
+                disabled={submitting}
+                className="flex-1 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 disabled:opacity-60"
+              >
+                {t("writer.common.save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deletingArticleId ? (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setDeletingArticleId(null)}>
+          <div className="bg-white rounded-2xl w-80 p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
             <div className="w-12 h-12 flex items-center justify-center rounded-full bg-red-50 mx-auto mb-4">
               <i className="ri-delete-bin-line text-red-500 text-xl" />
             </div>
-            <h3 className="text-base font-bold text-gray-900 text-center mb-1">确认删除</h3>
-            <p className="text-sm text-gray-500 text-center mb-5">删除后无法恢复，确定要删除这篇文章吗？</p>
+            <h3 className="text-base font-bold text-gray-900 text-center mb-1">{t("writer.modal.deleteTitle")}</h3>
+            <p className="text-sm text-gray-500 text-center mb-5">{t("writer.modal.deleteSubtitle")}</p>
             <div className="flex gap-3">
-              <button onClick={() => setDeletingId(null)} className="flex-1 py-2.5 rounded-xl text-sm text-gray-600 border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer whitespace-nowrap">取消</button>
-              <button onClick={handleDelete} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors cursor-pointer whitespace-nowrap">确认删除</button>
+              <button onClick={() => setDeletingArticleId(null)} className="flex-1 py-2.5 rounded-xl text-sm text-gray-600 border border-gray-200 hover:bg-gray-50">
+                {t("writer.common.cancel")}
+              </button>
+              <button
+                onClick={() => void handleDeleteArticle()}
+                disabled={submitting}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-60"
+              >
+                {t("writer.actions.delete")}
+              </button>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 };

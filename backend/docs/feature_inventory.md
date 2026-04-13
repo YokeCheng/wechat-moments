@@ -34,8 +34,8 @@
 | --- | --- | --- | --- |
 | `/` | `src/pages/home/page.tsx` | `src/mocks/articles.ts` | 爆款发现入口 |
 | `/prompts` | `src/pages/prompts/page.tsx` | `src/mocks/prompts.ts` | 提示词库 |
-| `/writer` | `src/pages/writer/page.tsx` | `src/mocks/writerArticles.ts`, `src/mocks/prompts.ts` | 智能生文 |
-| `/layout` | `src/pages/layout/page.tsx` | URL 参数 + 本地状态 | 一键排版 |
+| `/writer` | `src/pages/writer/page.tsx` | `/api/v1/writer/*` + `/api/v1/prompts` | 智能生文 |
+| `/layout` | `src/pages/layout/page.tsx` | `/api/v1/layout/*` + `/api/v1/assets` + `articleId` 查询参数 | 一键排版 |
 | `/channels` | `src/pages/channels/page.tsx` | 页面内 `mockChannels` | 公众号管理原型 |
 | `/vip` | `src/pages/vip/page.tsx` | 页面内 `plans` | 会员中心原型 |
 | `/tutorial` | `src/pages/tutorial/page.tsx` | 页面内静态数据 | 帮助文档 |
@@ -73,9 +73,9 @@
 | --- | --- | --- |
 | `src/pages/prompts/page.tsx` | `navigator.clipboard.writeText` | 后端不需复制接口，但需要返回完整提示词内容 |
 | `src/pages/layout/page.tsx` | `navigator.clipboard.writeText` | 后端需要排版 HTML 渲染或持久化能力 |
-| `src/pages/layout/page.tsx` | `FileReader` 读取本地封面图 | 后端需要文件上传接口 |
+| `src/pages/layout/page.tsx` | `input[type=file]` 上传封面图 | 已接通 `/api/v1/assets`，浏览器仍负责选择文件 |
 | `src/pages/layout/page.tsx` | `useSearchParams` 读取 `content` | 生文页与排版页需要稳定的数据传递 |
-| `src/pages/writer/page.tsx` | `setTimeout` 模拟异步生成 | 后端需要生成任务接口和状态查询 |
+| `src/pages/writer/page.tsx` | 轮询生成任务状态 | 已接通 `/api/v1/writer/generate-tasks` 与状态查询 |
 
 ## Mock Data Sources
 
@@ -300,11 +300,26 @@
 - 会员：套餐、订阅、订单、用量
 - 联系我们：留言提交
 
+## 2026-04-13 状态更新
+
+- `/writer` 主路径已完成真实联调：分组列表、文章列表、文章编辑、文章删除、生成任务创建与轮询均走后端接口。
+- `/writer` 已支持承接上游参数：`promptId`、`title`、`ref`、`articleId`，并默认每页 10 条，支持 `10/20/50/100` 档位。
+- `/writer` 主路径已脱离 `src/mocks/writerArticles.ts`，本地 `setTimeout` 生成逻辑已退役。
+- `/layout` 已接通真实排版链路：HTML 渲染、草稿创建、草稿更新、封面上传、封面静态访问均可用。
+- `/layout` 已补上“最近草稿/恢复入口”，当前主要剩余缺口是封面直读细节和正文资源上传工作台，因此能力状态仍应记为“最小闭环已完成，完整工作台仍在推进”。
+- 首页热榜已切换为微博、百度、头条三源聚合读取；应用启动后会先同步一次，随后每 6 小时增量写入一批新快照。
+- 热榜项现在带有来源平台标识；当单个平台抓取失败时，会优先回退到上一份快照，必要时再回退到 seed，不阻断首页展示。
+- 首页热榜补充了最近同步时间和手动刷新入口，便于直接判断当前快照是否滞后。
+- 首页热榜标题现在只在拿到真实详情页直链时才允许跳转，不再把搜索页伪装成原文。
+- 首页发现文章当前仍由后端样例库承载，尚未接入真实文章采集；页面必须把该状态显式暴露给用户。
+- 发现文章列表中的占位链接不再回退到平台搜索页冒充原文；样例文章会显示为“样例数据/无原文”。
+- 顶部导航将收敛到当前真正可交付的主链路页面，未完成的 P1/P2 原型不再作为默认主导航入口暴露。
+
 ## Known Integration Risks
 
 - `/editor` 页面与部分快捷工具路径未注册
-- `WriterPage` 未读取 URL 预填参数
-- `LayoutPage` 没有真实持久化
+- 发现文章真实采集切片尚未完成，当前首页文章区仍是样例库而非实时采集流
+- `LayoutPage` 已接通真实草稿持久化，但恢复草稿时仍缺少封面资源直读能力
 - 多个源码文件存在编码异常，联调前建议统一 UTF-8
 ## 2026-04-09 P0-02 Update
 
@@ -320,3 +335,12 @@
 - The current bilingual scope covers global navigation and the homepage discover surface.
 - Homepage article list and hot topic list now default to `10` items per page and allow `10 / 20 / 50 / 100`.
 - Page size switching keeps the existing discover contract and continues to pass `page_size` to the backend.
+
+## 2026-04-10 P0-03 提示词库更新
+
+- Route `/prompts` now reads real backend data from `GET /api/v1/prompt-categories` and `GET /api/v1/prompts`.
+- The primary `/prompts` path no longer depends on `src/mocks/prompts.ts`.
+- Prompt library actions now use backend CRUD for category create/update/delete and prompt create/update/delete.
+- Prompt page states now explicitly cover loading, empty, error, and success.
+- Prompt page now defaults to `10` items per page and allows `10 / 20 / 50 / 100`.
+- Prompt page text now participates in the same Chinese/English language toggle as the top bar.

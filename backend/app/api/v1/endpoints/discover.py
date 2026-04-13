@@ -13,8 +13,10 @@ from app.schemas.discover import (
     DiscoverArticleQuery,
     DiscoverTimeRange,
     HotTopicList,
+    HotTopicRefreshResult,
 )
 from app.services.discover_service import list_discover_articles, list_hot_topics
+from app.services.discover_sync_service import refresh_hot_topics_snapshot
 
 
 router = APIRouter()
@@ -54,3 +56,11 @@ def get_hot_topics(
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> HotTopicList:
     return list_hot_topics(db, page=page, page_size=page_size)
+
+
+@router.post("/discover/hot-topics", response_model=HotTopicRefreshResult)
+def refresh_hot_topics(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> HotTopicRefreshResult:
+    return refresh_hot_topics_snapshot(db)

@@ -42,7 +42,7 @@ class DiscoverArticle(Base, TimestampMixin):
     views: Mapped[int] = mapped_column(nullable=False, default=0)
     likes: Mapped[int] = mapped_column(nullable=False, default=0)
     shares: Mapped[int] = mapped_column(nullable=False, default=0)
-    source_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_hot: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_new: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     raw_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
@@ -52,6 +52,8 @@ class HotTopic(Base, TimestampMixin):
     __tablename__ = "hot_topics"
     __table_args__ = (
         Index("idx_hot_topics_snapshot_rank", "snapshot_date", "rank_no"),
+        Index("idx_hot_topics_snapshot_at_rank", "snapshot_at", "rank_no"),
+        Index("idx_hot_topics_platform_snapshot_at", "platform", "snapshot_at"),
         Index("idx_hot_topics_field", "field"),
         Index("idx_hot_topics_heat", "heat"),
     )
@@ -64,4 +66,5 @@ class HotTopic(Base, TimestampMixin):
     trend: Mapped[str] = mapped_column(String(16), nullable=False, default=HotTopicTrend.STABLE.value)
     field: Mapped[str] = mapped_column(String(32), nullable=False)
     snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
+    snapshot_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     raw_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)

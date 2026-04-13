@@ -7,7 +7,7 @@ import type {
   DiscoverTimeRange,
   HotTopicList,
 } from "@/lib/discover";
-import { fetchDiscoverArticles, fetchHotTopics } from "@/lib/discover";
+import { fetchDiscoverArticles, fetchHotTopics, refreshHotTopicsSnapshot } from "@/lib/discover";
 import {
   ALL_FIELD_VALUE,
   DEFAULT_PAGE_SIZE,
@@ -59,6 +59,8 @@ const HomePage = () => {
   const [hotTopicPage, setHotTopicPage] = useState(1);
   const [articleReloadKey, setArticleReloadKey] = useState(0);
   const [hotTopicReloadKey, setHotTopicReloadKey] = useState(0);
+  const [hotTopicRefreshError, setHotTopicRefreshError] = useState<string | null>(null);
+  const [isHotTopicRefreshing, setIsHotTopicRefreshing] = useState(false);
   const [articlesState, setArticlesState] = useState(defaultArticlesState);
   const [hotTopicsState, setHotTopicsState] = useState(defaultHotTopicsState);
   const requestFallbackMessage = t("home.error.requestFailed");
@@ -157,6 +159,7 @@ const HomePage = () => {
         if (cancelled) {
           return;
         }
+        setHotTopicRefreshError(null);
         setHotTopicsState({
           status: "success",
           data,
@@ -178,6 +181,18 @@ const HomePage = () => {
       cancelled = true;
     };
   }, [activeTab, hotTopicPage, hotTopicReloadKey, pageSize, requestFallbackMessage]);
+
+  useEffect(() => {
+    if (activeTab !== "hot") {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setHotTopicReloadKey((current) => current + 1);
+    }, 60_000);
+
+    return () => window.clearInterval(timer);
+  }, [activeTab]);
 
   const activeFilterCount = [
     activeField !== ALL_FIELD_VALUE,
@@ -219,6 +234,20 @@ const HomePage = () => {
     setPageSize(nextPageSize);
     setArticlePage(1);
     setHotTopicPage(1);
+  };
+
+  const handleHotTopicRefresh = async () => {
+    setHotTopicRefreshError(null);
+    setIsHotTopicRefreshing(true);
+    try {
+      await refreshHotTopicsSnapshot();
+      setHotTopicPage(1);
+      setHotTopicReloadKey((current) => current + 1);
+    } catch (error: unknown) {
+      setHotTopicRefreshError(toErrorMessage(error, requestFallbackMessage));
+    } finally {
+      setIsHotTopicRefreshing(false);
+    }
   };
 
   return (
@@ -382,9 +411,13 @@ const HomePage = () => {
           <DiscoverHotSearchList
             items={hotTopicsState.data?.items ?? []}
             pagination={hotTopicsState.data?.pagination ?? null}
+            syncedAt={hotTopicsState.data?.synced_at ?? null}
             isLoading={hotTopicsState.status === "loading"}
+            isRefreshing={isHotTopicRefreshing}
             error={hotTopicsState.error}
+            refreshError={hotTopicRefreshError}
             onRetry={() => setHotTopicReloadKey((current) => current + 1)}
+            onRefresh={handleHotTopicRefresh}
             onPageChange={setHotTopicPage}
           />
         ) : (

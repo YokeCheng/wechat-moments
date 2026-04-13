@@ -56,6 +56,7 @@ function Get-BackendFingerprint {
 
 function Start-BackendApp {
     Stop-ManagedProcess -PidDir $PidDir -Name $ChildProcessName
+    Stop-ConflictingBackendProcess
 
     $Process = Start-Process -FilePath $PythonExe `
         -ArgumentList @(
@@ -71,6 +72,38 @@ function Start-BackendApp {
 
     Set-ManagedProcessPid -PidDir $PidDir -Name $ChildProcessName -ProcessId $Process.Id
     return $Process
+}
+
+function Stop-ConflictingBackendProcess {
+    $OwningProcessIds = @(Get-NetTCPConnection -State Listen -LocalPort $BackendPort -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique)
+    if (-not $OwningProcessIds -or $OwningProcessIds.Count -eq 0) {
+        return
+    }
+
+    $ChildProcess = Get-ManagedProcess -PidDir $PidDir -Name $ChildProcessName
+    $TargetProcessIds = @($OwningProcessIds | ForEach-Object { [int]$_ } | Sort-Object -Unique -Descending)
+
+    foreach ($OwningProcessId in $TargetProcessIds) {
+        if ($ChildProcess -and $OwningProcessId -eq $ChildProcess.Id) {
+            continue
+        }
+
+        $ProcessInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $OwningProcessId" -ErrorAction SilentlyContinue
+        if (-not $ProcessInfo) {
+            continue
+        }
+
+        $CommandLine = [string]$ProcessInfo.CommandLine
+        $LooksLikeRepoBackend = $CommandLine -match "uvicorn\\s+app\\.main:app"
+        if (-not $LooksLikeRepoBackend) {
+            throw "backend port $BackendPort is occupied by unmanaged process $OwningProcessId"
+        }
+
+        Write-Output "stopping conflicting backend process $OwningProcessId on port $BackendPort"
+        Stop-ProcessTree -RootPid $OwningProcessId
+    }
+    Start-Sleep -Milliseconds 500
 }
 
 try {

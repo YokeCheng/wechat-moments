@@ -1,27 +1,13 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi.testclient import TestClient
-import pytest
 
-from app.db.base import Base
-from app.db.session import SessionLocal, engine
-from app.main import app
-from app.services.auth_service import ensure_auth_seed_data
-from app.services.discover_service import ensure_discover_seed_data
-
-
-@pytest.fixture()
-def client() -> TestClient:
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    with SessionLocal() as session:
-        ensure_auth_seed_data(session)
-        ensure_discover_seed_data(session)
-
-    with TestClient(app) as test_client:
-        yield test_client
-
-    Base.metadata.drop_all(bind=engine)
+from app.db.session import SessionLocal
+from app.repo.discover_repo import get_discover_article_by_id
+from app.api.v1.endpoints import discover as discover_endpoint
+from app.schemas.discover import HotTopicRefreshResult
 
 
 def _auth_headers(client: TestClient) -> dict[str, str]:
@@ -59,6 +45,8 @@ def test_discover_articles_support_filters_and_pagination(client: TestClient) ->
     assert item["field"] == "科技"
     assert item["views"] >= 100000
     assert "AI" in item["title"]
+    assert item["source_url"] is None
+    assert item["is_sample"] is True
 
 
 def test_discover_articles_require_auth(client: TestClient) -> None:
@@ -76,6 +64,27 @@ def test_discover_articles_validate_query_params(client: TestClient) -> None:
     assert response.status_code == 422
 
 
+def test_discover_articles_mask_legacy_search_links_as_sample(client: TestClient) -> None:
+    with SessionLocal() as session:
+        article = get_discover_article_by_id(session, "dca_wx_001")
+        assert article is not None
+        article.source_url = "https://weixin.sogou.com/weixin?type=2&query=legacy"
+        article.raw_json = {}
+        session.commit()
+
+    response = client.get(
+        "/api/v1/discover/articles",
+        params={"platform": "weixin", "page": 1, "page_size": 1},
+        headers=_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["id"] == "dca_wx_001"
+    assert item["source_url"] is None
+    assert item["is_sample"] is True
+
+
 def test_hot_topics_use_latest_snapshot_and_paginate(client: TestClient) -> None:
     response = client.get(
         "/api/v1/discover/hot-topics",
@@ -91,6 +100,34 @@ def test_hot_topics_use_latest_snapshot_and_paginate(client: TestClient) -> None
         "total": 12,
         "has_more": True,
     }
+    assert payload["synced_at"] is not None
     assert len(payload["items"]) == 5
     assert payload["items"][0]["rank"] == 6
     assert payload["items"][-1]["rank"] == 10
+    assert "source_url" in payload["items"][0]
+
+
+def test_hot_topics_refresh_endpoint_requires_auth(client: TestClient) -> None:
+    response = client.post("/api/v1/discover/hot-topics")
+    assert response.status_code == 401
+    assert response.json()["detail"] == "missing bearer token"
+
+
+def test_hot_topics_refresh_endpoint_returns_sync_result(client: TestClient, monkeypatch: object) -> None:
+    synced_at = datetime.now(UTC)
+
+    def fake_refresh_hot_topics_snapshot(_: object) -> HotTopicRefreshResult:
+        return HotTopicRefreshResult(total=60, synced_at=synced_at)
+
+    monkeypatch.setattr(discover_endpoint, "refresh_hot_topics_snapshot", fake_refresh_hot_topics_snapshot)
+
+    response = client.post(
+        "/api/v1/discover/hot-topics",
+        headers=_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "total": 60,
+        "synced_at": synced_at.isoformat().replace("+00:00", "Z"),
+    }

@@ -42,10 +42,7 @@ const TopBar = (_props: TopBarProps) => {
     { label: t("topbar.nav.prompts"), path: "/prompts" },
     { label: t("topbar.nav.writer"), path: "/writer" },
     { label: t("topbar.nav.layout"), path: "/layout" },
-    { label: t("topbar.nav.channels"), path: "/channels" },
     { label: t("topbar.nav.tutorial"), path: "/tutorial" },
-    { label: t("topbar.nav.contact"), path: "/contact" },
-    { label: t("topbar.nav.vip"), path: "/vip" },
   ];
 
   const userMenuItems = [

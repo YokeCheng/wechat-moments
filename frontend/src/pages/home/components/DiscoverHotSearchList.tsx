@@ -8,9 +8,13 @@ import { formatCompactNumber, getLocale, translateFieldLabel } from "../constant
 type DiscoverHotSearchListProps = {
   items: HotTopic[];
   pagination: Pagination | null;
+  syncedAt: string | null;
   isLoading: boolean;
+  isRefreshing: boolean;
   error: string | null;
+  refreshError: string | null;
   onRetry: () => void;
+  onRefresh: () => void;
   onPageChange: (page: number) => void;
 };
 
@@ -32,15 +36,28 @@ function buildPagination(currentPage: number, totalPages: number) {
 const DiscoverHotSearchList = ({
   items,
   pagination,
+  syncedAt,
   isLoading,
+  isRefreshing,
   error,
+  refreshError,
   onRetry,
+  onRefresh,
   onPageChange,
 }: DiscoverHotSearchListProps) => {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const language = i18n.resolvedLanguage || i18n.language;
   const locale = getLocale(language);
+  const syncedAtLabel = syncedAt
+    ? new Date(syncedAt).toLocaleString(locale, {
+        hour12: false,
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : t("home.hot.header.unsynced");
 
   const totalPages = useMemo(() => {
     if (!pagination || pagination.page_size === 0) {
@@ -59,7 +76,24 @@ const DiscoverHotSearchList = ({
         <i className="ri-fire-line text-sm text-orange-500" />
         <span className="text-sm font-semibold text-gray-800">{t("home.hot.header.title")}</span>
         <span className="text-xs text-gray-400">{t("home.hot.header.subtitle")}</span>
+        <div className="ml-auto flex items-center gap-3">
+          <span className="text-xs text-gray-400">{t("home.hot.header.syncedAt", { value: syncedAtLabel })}</span>
+          <button
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className="inline-flex cursor-pointer items-center gap-1 rounded-md bg-orange-50 px-3 py-1.5 text-xs font-medium text-orange-600 transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+          >
+            <i className={`ri-refresh-line text-sm ${isRefreshing ? "animate-spin" : ""}`} />
+            {isRefreshing ? t("home.hot.actions.refreshing") : t("home.hot.actions.refresh")}
+          </button>
+        </div>
       </div>
+
+      {!isLoading && refreshError && (
+        <div className="border-b border-red-100 bg-red-50 px-5 py-2 text-xs text-red-500">
+          {t("home.hot.refreshFailed", { message: refreshError })}
+        </div>
+      )}
 
       {isLoading && (
         <div className="flex flex-1 items-center justify-center">
@@ -106,10 +140,25 @@ const DiscoverHotSearchList = ({
                   {item.rank}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm text-gray-800 transition-colors group-hover:text-orange-500">
-                    {item.title}
-                  </p>
+                  {item.source_url ? (
+                    <a
+                      href={item.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block truncate text-sm text-gray-800 transition-colors hover:text-orange-500"
+                    >
+                      {item.title}
+                    </a>
+                  ) : (
+                    <p className="truncate text-sm text-gray-800 transition-colors group-hover:text-orange-500">
+                      {item.title}
+                    </p>
+                  )}
                   <div className="mt-0.5 flex items-center gap-2 text-xs text-gray-400">
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">
+                      {t(`home.hot.platform.${item.platform}`)}
+                    </span>
+                    <span className="text-gray-300">/</span>
                     <span>{translateFieldLabel(t, item.field)}</span>
                     <span className="text-gray-300">/</span>
                     <span>{t("home.hot.heat", { heatValue: formatCompactNumber(item.heat, language) })}</span>
@@ -129,6 +178,21 @@ const DiscoverHotSearchList = ({
                     </span>
                   )}
                   {item.trend === "stable" && <span className="text-xs text-gray-400">{t("home.hot.trend.stable")}</span>}
+                  {item.source_url && (
+                    <a
+                      href={item.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-md bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+                    >
+                      {t("home.hot.actions.original")}
+                    </a>
+                  )}
+                  {!item.source_url && (
+                    <span className="rounded-md bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-400">
+                      {t("home.hot.actions.unavailable")}
+                    </span>
+                  )}
                   <button
                     onClick={() => navigate(`/writer?title=${encodeURIComponent(item.title)}`)}
                     className="cursor-pointer rounded-md bg-orange-500 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-orange-600"
